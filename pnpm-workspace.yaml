@@ -1,0 +1,11 @@
+# NOT a monorepo workspace — no `packages:` key, so this stays a single-package
+# project. pnpm 11 records build-script approvals here (relocated out of
+# package.json). `false` = do not run that dependency's install/build scripts.
+# The native deps ship prebuilt binaries, so skipping scripts is safe and keeps
+# installs non-interactive (CI included).
+allowBuilds:
+  esbuild: false
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
+  unrs-resolver: false
