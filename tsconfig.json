@@ -38,6 +38,7 @@
   "exclude": [
     "node_modules",
     "pipeline",
-    "tests"
+    "tests",
+    "e2e"
   ]
 }

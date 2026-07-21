@@ -11,6 +11,8 @@
     "test": "vitest run",
     "test:api": "vitest run --config vitest.api.config.ts",
     "test:subjects": "vitest run --config vitest.battery.config.ts",
+    "test:e2e": "playwright test",
+    "seed:mongo": "tsx src/scripts/seed-mongo.ts",
     "crawl": "tsx src/scripts/crawler.ts",
     "crawl:debug": "tsx src/scripts/crawler.ts --debug",
     "pyq-gen": "tsx src/scripts/pyq-generator.ts",
@@ -41,6 +43,7 @@
     "sonner": "^2.0.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/typography": "^0.5.20",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^20.19.37",
