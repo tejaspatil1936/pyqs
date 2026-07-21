@@ -267,9 +267,9 @@ export default function AskAiPanel() {
     const effectiveSubject =
         mode === "browse" ? browseMatch : picking ? null : freePick
 
-    const questionCount =
-        subjects?.find((s) => s.subject === effectiveSubject)?.question_count ??
-        null
+    const effectiveRow = subjects?.find((s) => s.subject === effectiveSubject)
+    const questionCount = effectiveRow?.question_count ?? null
+    const examCount = effectiveRow?.exam_count ?? null
 
     const nearest = useMemo(
         () =>
@@ -354,11 +354,15 @@ export default function AskAiPanel() {
                                 className="h-5 w-5 shrink-0 text-brand"
                             />
                             <div className="min-w-0">
-                                <span className="text-sm font-bold">Ask AI</span>
+                                <span className="block truncate text-sm font-bold">
+                                    {effectiveSubject ?? "Ask AI"}
+                                </span>
                                 {effectiveSubject && questionCount != null && (
                                     <p className="truncate text-xs text-content/60">
-                                        {effectiveSubject} ·{" "}
                                         {questionCount.toLocaleString()} questions
+                                        {examCount != null
+                                            ? ` · ${examCount.toLocaleString()} exams`
+                                            : ""}
                                     </p>
                                 )}
                             </div>

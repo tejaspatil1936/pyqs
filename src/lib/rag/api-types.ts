@@ -4,6 +4,8 @@ export interface SubjectRow {
   subject: string;
   question_count: number;
   paper_count: number;
+  /** Distinct exam sittings for the subject; may be absent on older payloads. */
+  exam_count?: number;
 }
 
 export interface PaperSource {
