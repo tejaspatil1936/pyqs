@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, ReactNode } from "react"
+import { usePathname } from "next/navigation"
 import { ThemeProvider } from "next-themes"
 import { SettingsProvider, useSettings } from "@/contexts/SettingsContext"
 import { AskAiProvider, useAskAi } from "@/contexts/AskAiContext"
@@ -16,19 +17,27 @@ interface ClientProviderProps {
 function App({ children }: { children: ReactNode }) {
     const { cursorStyle } = useSettings()
     const { isOpen } = useAskAi()
+    const pathname = usePathname()
+    // /assistant is the standalone assistant page — don't stack the global
+    // panel on top of it.
+    const showAssistant = pathname !== "/assistant"
     return (
         <>
             {/* Desktop: content is pushed left so the AskAI panel splits the
                 viewport. Mobile: the panel is a full-screen drawer, no push. */}
             <div
                 className={`transition-[margin] duration-300 ease-out ${
-                    isOpen ? "lg:mr-[28rem]" : ""
+                    showAssistant && isOpen ? "lg:mr-[28rem]" : ""
                 }`}
             >
                 {children}
             </div>
-            <AskAiPanel />
-            <AskAiFab />
+            {showAssistant && (
+                <>
+                    <AskAiPanel />
+                    <AskAiFab />
+                </>
+            )}
             {cursorStyle === "ghost" && <GhostCursor />}
         </>
     )

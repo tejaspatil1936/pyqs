@@ -52,7 +52,8 @@ export default function PyqApp() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-2xl px-4 pb-10">
       <header className="pb-6 pt-10 text-center">
         <h1 className="text-2xl font-extrabold tracking-tight text-content">
           MITAoE <span className="text-brand">PYQ</span>
@@ -89,6 +90,7 @@ export default function PyqApp() {
       )}
 
       <StatsFooter />
+      </div>
     </div>
   );
 }
