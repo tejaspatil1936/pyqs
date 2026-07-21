@@ -205,7 +205,8 @@ export function AskAiPanelBody({
  * /assistant).
  */
 export default function AskAiPanel() {
-    const { isOpen, close, browsedSubject } = useAskAi()
+    const { isOpen, close, browsedSubject, panelWidth, setPanelWidth, isDesktop } =
+        useAskAi()
 
     const [subjects, setSubjects] = useState<SubjectRow[] | null>(null)
     const [loadError, setLoadError] = useState<string | null>(null)
@@ -322,6 +323,26 @@ export default function AskAiPanel() {
     const chip =
         "rounded-lg border border-accent px-2.5 py-1 text-xs font-medium text-content/80 transition-colors hover:bg-accent"
 
+    // Drag the left edge to resize (desktop only); width is clamped + persisted.
+    const startResize = (e: React.PointerEvent) => {
+        e.preventDefault()
+        const onMove = (ev: PointerEvent) =>
+            setPanelWidth(window.innerWidth - ev.clientX)
+        const onUp = () => {
+            window.removeEventListener("pointermove", onMove)
+            window.removeEventListener("pointerup", onUp)
+            document.body.style.userSelect = ""
+        }
+        document.body.style.userSelect = "none"
+        window.addEventListener("pointermove", onMove)
+        window.addEventListener("pointerup", onUp)
+    }
+
+    // Desktop = right-docked split; mobile = bottom sheet.
+    const motionProps = isDesktop
+        ? { initial: { x: "100%" }, animate: { x: 0 }, exit: { x: "100%" } }
+        : { initial: { y: "100%" }, animate: { y: 0 }, exit: { y: "100%" } }
+
     return (
         <AnimatePresence>
             {isOpen && (
@@ -339,15 +360,30 @@ export default function AskAiPanel() {
 
                     <motion.aside
                         key="askai-panel"
-                        initial={{ x: "100%" }}
-                        animate={{ x: 0 }}
-                        exit={{ x: "100%" }}
+                        {...motionProps}
                         transition={{ type: "tween", duration: 0.3, ease: "easeOut" }}
                         role="dialog"
                         aria-modal="true"
                         aria-label="Ask AI"
-                        className="fixed right-0 top-0 z-[60] flex h-[100dvh] w-full flex-col border-l border-accent/60 bg-primary text-content shadow-2xl lg:w-[28rem]"
+                        style={isDesktop ? { width: panelWidth } : undefined}
+                        data-askai-panel=""
+                        className={`fixed z-[60] flex flex-col border-accent/60 bg-primary text-content shadow-2xl ${
+                            isDesktop
+                                ? "right-0 top-0 h-[100dvh] border-l"
+                                : "inset-x-0 bottom-0 h-[85dvh] rounded-t-2xl border-t"
+                        }`}
                     >
+                        {isDesktop && (
+                            <div
+                                onPointerDown={startResize}
+                                role="separator"
+                                aria-orientation="vertical"
+                                aria-label="Resize Ask AI panel"
+                                className="group absolute left-0 top-0 z-10 flex h-full w-2 -translate-x-1/2 cursor-col-resize items-stretch justify-center"
+                            >
+                                <span className="h-full w-px bg-transparent transition-colors group-hover:bg-brand/40" />
+                            </div>
+                        )}
                         <div className="flex items-center gap-2 border-b border-accent/60 px-4 py-3">
                             <Sparkle
                                 weight="fill"

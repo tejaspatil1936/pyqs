@@ -16,19 +16,19 @@ interface ClientProviderProps {
 
 function App({ children }: { children: ReactNode }) {
     const { cursorStyle } = useSettings()
-    const { isOpen } = useAskAi()
+    const { isOpen, panelWidth, isDesktop } = useAskAi()
     const pathname = usePathname()
     // /assistant is the standalone assistant page — don't stack the global
     // panel on top of it.
     const showAssistant = pathname !== "/assistant"
+    // Desktop: push content left by the panel's width so it splits the
+    // viewport. Mobile: the panel is a bottom sheet — no push.
+    const pushed = showAssistant && isOpen && isDesktop
     return (
         <>
-            {/* Desktop: content is pushed left so the AskAI panel splits the
-                viewport. Mobile: the panel is a full-screen drawer, no push. */}
             <div
-                className={`transition-[margin] duration-300 ease-out ${
-                    showAssistant && isOpen ? "lg:mr-[28rem]" : ""
-                }`}
+                className="transition-[margin] duration-300 ease-out"
+                style={{ marginRight: pushed ? panelWidth : 0 }}
             >
                 {children}
             </div>
