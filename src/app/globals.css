@@ -45,3 +45,18 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--brand));
 }
+
+/* Brief brand flash when a [n] citation marker jumps to its source card
+   in the AskAI answer view. Theme-aware via the --brand token. */
+@keyframes cite-flash {
+    0% {
+        background-color: hsl(var(--brand) / 0.28);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+.cite-flash {
+    animation: cite-flash 1.6s ease-out;
+}

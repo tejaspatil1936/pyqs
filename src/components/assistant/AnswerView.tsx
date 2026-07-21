@@ -22,9 +22,9 @@ function known(value: string | null): string | null {
 /* ---------- shared glanceable primitives ---------- */
 
 const TIER_STYLES = {
-  must: { label: "Must know", classes: "bg-indigo-500 text-white" },
-  should: { label: "Should know", classes: "bg-indigo-500/15 text-indigo-300" },
-  ifTime: { label: "If time permits", classes: "bg-slate-800 text-slate-400" },
+  must: { label: "Must know", classes: "bg-brand text-white" },
+  should: { label: "Should know", classes: "bg-brand/15 text-brand" },
+  ifTime: { label: "If time permits", classes: "bg-accent text-content/60" },
 };
 
 /** Topic-level tiers: fraction of the subject's total exams. */
@@ -40,8 +40,8 @@ function CoverageBar({ count, total }: { count: number; total: number | null }) 
   if (!total || total <= 0) return null;
   const pct = Math.max(2, Math.min(100, Math.round((count / total) * 100)));
   return (
-    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-800">
-      <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
+    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-accent">
+      <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -50,15 +50,15 @@ function CoverageBar({ count, total }: { count: number; total: number | null }) 
 function BigCount({ count, total }: { count: number; total: number | null }) {
   return (
     <span className="shrink-0 whitespace-nowrap tabular-nums">
-      <span className="text-lg font-extrabold leading-none text-slate-50">{count}</span>
-      {total != null && total > 0 && <span className="text-xs text-slate-500">/{total}</span>}
+      <span className="text-lg font-extrabold leading-none text-content">{count}</span>
+      {total != null && total > 0 && <span className="text-xs text-content/50">/{total}</span>}
     </span>
   );
 }
 
 function MutedPill({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full bg-slate-800/60 px-2 py-0.5 text-[11px] text-slate-500">
+    <span className="rounded-full bg-content/5 px-2 py-0.5 text-[11px] text-content/50">
       {children}
     </span>
   );
@@ -67,7 +67,7 @@ function MutedPill({ children }: { children: ReactNode }) {
 function TopicChip({ topic }: { topic?: string | null }) {
   if (!topic) return null;
   return (
-    <span className="mr-1.5 inline-block max-w-44 truncate rounded bg-indigo-500/10 px-1.5 py-0.5 align-middle text-[10px] font-medium text-indigo-300/90">
+    <span className="mr-1.5 inline-block max-w-44 truncate rounded bg-brand/10 px-1.5 py-0.5 align-middle text-[10px] font-medium text-brand">
       {topic}
     </span>
   );
@@ -77,10 +77,10 @@ function TopicChip({ topic }: { topic?: string | null }) {
 function MethodNote() {
   return (
     <details className="relative inline-block align-middle">
-      <summary className="inline-flex h-6 w-6 min-h-0 cursor-pointer list-none items-center justify-center rounded-full text-sm text-slate-500 hover:text-indigo-300 [&::-webkit-details-marker]:hidden">
+      <summary className="inline-flex h-6 w-6 min-h-0 cursor-pointer list-none items-center justify-center rounded-full text-sm text-content/50 hover:text-brand [&::-webkit-details-marker]:hidden">
         ⓘ
       </summary>
-      <div className="absolute left-0 z-10 mt-1 w-64 rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-xs leading-snug text-slate-300 shadow-xl">
+      <div className="absolute left-0 z-10 mt-1 w-64 rounded-lg border border-accent bg-secondary p-2.5 text-xs leading-snug text-content/80 shadow-xl">
         Counted over distinct exams — repeated uploads of the same paper count once.
       </div>
     </details>
@@ -124,7 +124,7 @@ function StatStrip({
   }
   return (
     <div
-      className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-slate-400"
+      className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-content/60"
       data-testid="stat-strip"
     >
       <span>{parts.join(" · ")}</span>
@@ -134,7 +134,7 @@ function StatStrip({
 }
 
 const Prose = ({ children }: { children: string }) => (
-  <div className="prose prose-sm prose-invert max-w-none prose-p:my-2 prose-li:my-0.5">
+  <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-li:my-0.5">
     <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
   </div>
 );
@@ -144,7 +144,7 @@ const Prose = ({ children }: { children: string }) => (
 export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: number }) {
   if (res.intent === "GREETING") {
     return (
-      <div data-testid="greeting-answer" className="prose prose-sm prose-invert max-w-none">
+      <div data-testid="greeting-answer" className="prose prose-sm dark:prose-invert max-w-none">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{res.answer}</ReactMarkdown>
       </div>
     );
@@ -152,7 +152,7 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
   if (res.intent === "REFUSED") {
     return (
       <div data-testid="refused-answer">
-        <span className="mb-2 inline-block rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-semibold text-slate-300">
+        <span className="mb-2 inline-block rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-content/80">
           Out of scope
         </span>
         <Prose>{res.answer}</Prose>
@@ -176,16 +176,16 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
   return (
     <div data-testid="analytics-answer">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-semibold text-indigo-300">
+        <span className="rounded-full bg-brand/15 px-2.5 py-0.5 text-xs font-semibold text-brand">
           {res.intent === "ANALYTICS" ? "Most asked — whole subject" : "Topic frequency"}
         </span>
         {res.topic && (
-          <span className="max-w-48 truncate rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-300">
+          <span className="max-w-48 truncate rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-content/80">
             {res.topic}
           </span>
         )}
         {filterNote && (
-          <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-300">
+          <span className="rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-content/80">
             {filterNote} only
           </span>
         )}
@@ -195,9 +195,9 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
         (res.clusters?.length ?? 0) > 0 &&
         res.topic_exam_count != null &&
         res.total_exams != null && (
-          <p className="mb-2 text-sm text-slate-200" data-testid="topic-total-lead">
+          <p className="mb-2 text-sm text-content" data-testid="topic-total-lead">
             <span className="font-semibold">{res.topic}</span> appeared in{" "}
-            <span className="text-lg font-extrabold text-slate-50">{res.topic_exam_count}</span> of{" "}
+            <span className="text-lg font-extrabold text-content">{res.topic_exam_count}</span> of{" "}
             {res.total_exams} exams
             {filterNote ? ` (${filterNote} only)` : ""}.
           </p>
@@ -220,7 +220,7 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
           </ol>
           {res.clusters!.length > 10 && (
             <details className="mt-2">
-              <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-slate-400 hover:text-indigo-400">
+              <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-content/60 hover:text-brand">
                 Show {res.clusters!.length - 10} more question groups
               </summary>
               <ol className="mt-2 space-y-3.5">
@@ -283,7 +283,7 @@ function TopicQuestionList({
   return (
     <details className="mt-1.5" onToggle={(e) => e.currentTarget.open && load()}>
       <summary
-        className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-slate-400 hover:text-indigo-400"
+        className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-content/60 hover:text-brand"
         data-testid="topic-questions-summary"
       >
         Questions ({total})
@@ -292,20 +292,20 @@ function TopicQuestionList({
         {visible.map((q, i) => (
           <li
             key={`${i}-${q.text.slice(0, 40)}`}
-            className="rounded-lg bg-slate-800/60 px-2.5 py-1.5 text-xs text-slate-300"
+            className="rounded-lg bg-content/5 px-2.5 py-1.5 text-xs text-content/80"
           >
             <ExpandableText text={q.text} />
-            <span className="mt-0.5 block text-[11px] text-slate-500">
+            <span className="mt-0.5 block text-[11px] text-content/50">
               asked in {q.exam_count} exam{q.exam_count === 1 ? "" : "s"}
             </span>
           </li>
         ))}
       </ul>
       {state === "loading" && (
-        <p className="mt-1 text-[11px] text-slate-500">Loading all {total} questions…</p>
+        <p className="mt-1 text-[11px] text-content/50">Loading all {total} questions…</p>
       )}
       {state === "failed" && (
-        <p className="mt-1 text-[11px] text-slate-500">
+        <p className="mt-1 text-[11px] text-content/50">
           Couldn't load the full list — showing a preview of {questions.length}.
         </p>
       )}
@@ -313,13 +313,13 @@ function TopicQuestionList({
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="mt-1 flex min-h-11 items-center text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          className="mt-1 flex min-h-11 items-center text-xs font-medium text-brand hover:text-brand"
         >
           Show {questions.length - 10} more
         </button>
       )}
       {state === "idle" && full === null && total > preview.length && (
-        <p className="mt-1 text-[11px] text-slate-500">Preview of {preview.length} shown.</p>
+        <p className="mt-1 text-[11px] text-content/50">Preview of {preview.length} shown.</p>
       )}
     </details>
   );
@@ -342,9 +342,9 @@ function ClusterItem({
   const yearsChip = filterNote ? (span ? `asked since ${span.split("–")[0]}` : null) : span;
 
   return (
-    <li className="rounded-xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm">
+    <li className="rounded-xl border border-accent/60 bg-secondary p-3.5 shadow-sm">
       <div className="flex gap-3">
-        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
           {rank}
         </span>
         <div className="min-w-0 flex-1">
@@ -357,7 +357,7 @@ function ClusterItem({
           </div>
           <CoverageBar count={c.exam_count} total={totalExams} />
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-content/50">
               {c.exam_count} exam{c.exam_count === 1 ? "" : "s"}
               {filterNote ? ` in ${filterNote}` : ""}
             </span>
@@ -368,13 +368,13 @@ function ClusterItem({
             )}
           </div>
           {c.text_twin && (
-            <p className="mt-1 text-[11px] text-slate-500">
+            <p className="mt-1 text-[11px] text-content/50">
               Count refers to a figure-based question — the figure may differ between papers.
             </p>
           )}
           {c.sources.length > 0 && (
             <details className="mt-2">
-              <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-slate-400 hover:text-indigo-400">
+              <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-content/60 hover:text-brand">
                 Sources ({c.source_total ?? c.sources.length})
               </summary>
               <ul className="space-y-1">
@@ -384,20 +384,20 @@ function ClusterItem({
                       href={s.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block truncate rounded-lg bg-slate-800/60 px-2.5 py-2.5 text-xs text-indigo-300 underline-offset-2 hover:underline"
+                      className="block truncate rounded-lg bg-content/5 px-2.5 py-2.5 text-xs text-brand underline-offset-2 hover:underline"
                       title={s.file_name}
                     >
                       {[known(s.year), known(s.exam_type)].filter(Boolean).join(" · ") || "PDF"} —{" "}
                       {s.file_name}
                       {s.matches_filter === false && (
-                        <span className="ml-1 text-slate-500">· outside filter</span>
+                        <span className="ml-1 text-content/50">· outside filter</span>
                       )}
                     </a>
                   </li>
                 ))}
               </ul>
               {(c.source_total ?? 0) > c.sources.length && (
-                <p className="mt-1 text-[11px] text-slate-500">
+                <p className="mt-1 text-[11px] text-content/50">
                   Showing the {c.sources.length} most recent of {c.source_total} papers.
                 </p>
               )}
@@ -450,7 +450,7 @@ function TopicAnswer({ res }: { res: AskResponse }) {
   const dayPlan = intent === "STUDY_GUIDE" ? splitDayPlan(res.answer) : null;
   return (
     <div data-testid={intent === "STUDY_GUIDE" ? "study-guide-answer" : "topic-weightage-answer"}>
-      <span className="mb-2 inline-block rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-semibold text-indigo-300">
+      <span className="mb-2 inline-block rounded-full bg-brand/15 px-2.5 py-0.5 text-xs font-semibold text-brand">
         {intent === "STUDY_GUIDE" ? "Study plan" : "Topic weightage"}
       </span>
       <StatStrip
@@ -466,9 +466,9 @@ function TopicAnswer({ res }: { res: AskResponse }) {
             {dayPlan.days.map((d) => (
               <li
                 key={d.label}
-                className="rounded-xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm"
+                className="rounded-xl border border-accent/60 bg-secondary p-3.5 shadow-sm"
               >
-                <span className="mb-1 inline-block rounded-full bg-indigo-600 px-2.5 py-0.5 text-xs font-bold text-white">
+                <span className="mb-1 inline-block rounded-full bg-brand px-2.5 py-0.5 text-xs font-bold text-white">
                   {d.label}
                 </span>
                 <Prose>{d.body}</Prose>
@@ -494,8 +494,8 @@ function TopicAnswer({ res }: { res: AskResponse }) {
             ))}
           </ol>
         ) : (
-          <details className="mt-3 border-t border-slate-800 pt-2">
-            <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-slate-400 hover:text-indigo-400">
+          <details className="mt-3 border-t border-accent/60 pt-2">
+            <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-content/60 hover:text-brand">
               The data behind this plan ({topics.length} topics)
             </summary>
             <ol className="mt-2 space-y-3">
@@ -537,9 +537,9 @@ function TopicItem({
         : `${t.years[0]}–${t.years[t.years.length - 1]}`;
   const tier = smallCorpus ? null : priorityTier(t.exam_count, totalExams);
   return (
-    <li className="rounded-xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm">
+    <li className="rounded-xl border border-accent/60 bg-secondary p-3.5 shadow-sm">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
           {rank}
         </span>
         <div className="min-w-0 flex-1">
@@ -574,9 +574,9 @@ function TopicItem({
 /* ---------- year trend ---------- */
 
 const STATUS_STYLES: Record<string, string> = {
-  rising: "bg-indigo-500/15 text-indigo-300",
-  staple: "bg-slate-800 text-slate-300",
-  fading: "bg-slate-800/60 text-slate-500",
+  rising: "bg-brand/15 text-brand",
+  staple: "bg-accent text-content/80",
+  fading: "bg-content/5 text-content/50",
 };
 
 function YearTrendAnswer({
@@ -588,16 +588,16 @@ function YearTrendAnswer({
 }) {
   return (
     <div data-testid="year-trend-answer">
-      <span className="mb-2 mr-1.5 inline-block rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-semibold text-indigo-300">
+      <span className="mb-2 mr-1.5 inline-block rounded-full bg-brand/15 px-2.5 py-0.5 text-xs font-semibold text-brand">
         Year-wise trend
       </span>
       <MethodNote />
       <Prose>{answer}</Prose>
       {trend && trend.topics.length > 0 && (
-        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-800">
+        <div className="mt-3 overflow-x-auto rounded-xl border border-accent/60">
           <table className="w-full min-w-max border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-900 text-slate-400">
+              <tr className="bg-secondary text-content/60">
                 <th className="px-3 py-2 text-left font-medium">Topic</th>
                 {trend.years.map((y) => (
                   <th key={y} className="px-2 py-2 text-center font-medium tabular-nums">
@@ -607,9 +607,9 @@ function YearTrendAnswer({
                 <th className="px-2 py-2 text-center font-medium">Total</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-accent/60">
               {trend.topics.map((t) => (
-                <tr key={t.topic} className="bg-slate-900/60">
+                <tr key={t.topic} className="bg-secondary/60">
                   <td className="max-w-52 px-3 py-2">
                     <span className="line-clamp-2">{t.topic}</span>
                     {t.status && (
@@ -623,12 +623,12 @@ function YearTrendAnswer({
                   {t.counts.map((n, i) => (
                     <td
                       key={trend.years[i]}
-                      className={`px-2 py-2 text-center tabular-nums ${n === 0 ? "text-slate-600" : "text-slate-200"}`}
+                      className={`px-2 py-2 text-center tabular-nums ${n === 0 ? "text-content/40" : "text-content"}`}
                     >
                       {n === 0 ? "·" : n}
                     </td>
                   ))}
-                  <td className="px-2 py-2 text-center text-sm font-extrabold tabular-nums text-slate-50">
+                  <td className="px-2 py-2 text-center text-sm font-extrabold tabular-nums text-content">
                     {t.exam_count}
                   </td>
                 </tr>
@@ -681,7 +681,7 @@ function SemanticAnswer({
 
   return (
     <div data-testid="semantic-answer">
-      <div className="prose prose-sm prose-invert max-w-none prose-p:my-2 prose-li:my-0.5">
+      <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-li:my-0.5">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
@@ -694,7 +694,7 @@ function SemanticAnswer({
                   <button
                     type="button"
                     onClick={() => jumpTo(ref)}
-                    className="mx-px inline-flex -translate-y-1 items-center rounded px-0.5 align-super text-[10px] font-medium text-indigo-400/80 no-underline hover:text-indigo-300"
+                    className="mx-px inline-flex -translate-y-1 items-center rounded px-0.5 align-super text-[10px] font-medium text-brand/80 no-underline hover:text-brand"
                     title={`Show source ${ref}`}
                   >
                     {ref}
@@ -715,11 +715,11 @@ function SemanticAnswer({
 
       {citations.length > 0 && (
         <details
-          className="mt-3 border-t border-slate-800 pt-2"
+          className="mt-3 border-t border-accent/60 pt-2"
           open={open}
           onToggle={(e) => setOpen(e.currentTarget.open)}
         >
-          <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-slate-400 hover:text-indigo-400">
+          <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-content/60 hover:text-brand">
             Sources — {citations.length} question{citations.length === 1 ? "" : "s"} from past
             papers
           </summary>
@@ -728,29 +728,29 @@ function SemanticAnswer({
               <li
                 key={c.ref}
                 id={`cite-${msgId}-${c.ref}`}
-                className={`rounded-lg border border-slate-800 bg-slate-800/60 p-2.5 ${flashRef === c.ref ? "cite-flash" : ""}`}
+                className={`rounded-lg border border-accent/60 bg-content/5 p-2.5 ${flashRef === c.ref ? "cite-flash" : ""}`}
               >
                 <div className="flex items-start gap-2">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-indigo-500/20 text-[11px] font-bold text-indigo-300">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-brand/20 text-[11px] font-bold text-brand">
                     {c.ref}
                   </span>
                   <div className="min-w-0 flex-1">
                     <TopicChip topic={c.topic} />
                     <ExpandableText
                       text={c.question_text}
-                      className="text-xs leading-snug text-slate-300"
+                      className="text-xs leading-snug text-content/80"
                     />
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-content/60">
                       {known(c.year) && <span>{c.year}</span>}
                       {known(c.exam_type) && (
-                        <span className="rounded bg-slate-700 px-1.5">{c.exam_type}</span>
+                        <span className="rounded bg-accent px-1.5">{c.exam_type}</span>
                       )}
                       {c.marks != null && <span>{c.marks} marks</span>}
                       <a
                         href={c.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex min-h-11 items-center font-medium text-indigo-400 underline-offset-2 hover:underline"
+                        className="inline-flex min-h-11 items-center font-medium text-brand underline-offset-2 hover:underline"
                       >
                         Open paper ↗
                       </a>

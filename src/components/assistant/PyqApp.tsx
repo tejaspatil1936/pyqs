@@ -54,17 +54,17 @@ export default function PyqApp() {
   return (
     <div className="mx-auto max-w-2xl px-4">
       <header className="pb-6 pt-10 text-center">
-        <h1 className="text-2xl font-extrabold tracking-tight text-slate-100">
-          MITAoE <span className="text-indigo-400">PYQ</span>
+        <h1 className="text-2xl font-extrabold tracking-tight text-content">
+          MITAoE <span className="text-brand">PYQ</span>
         </h1>
-        <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
+        <p className="mx-auto mt-2 max-w-md text-sm text-content/60">
           Pick your subject, then ask anything about previous-year question papers — real
           frequency counts and answers grounded in actual questions.
         </p>
       </header>
 
       {loadError ? (
-        <div className="rounded-xl border border-red-900 bg-red-950 p-4 text-center text-sm text-red-300">
+        <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-center text-sm text-red-600 dark:text-red-300">
           <p>{loadError}</p>
           <button
             type="button"
@@ -81,9 +81,9 @@ export default function PyqApp() {
         <SubjectPicker subjects={subjects} onSelect={pickSubject} />
       ) : (
         <div className="space-y-2" aria-live="polite" aria-busy="true">
-          <div className="h-12 animate-pulse rounded-xl bg-slate-800" />
+          <div className="h-12 animate-pulse rounded-xl bg-accent" />
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-12 animate-pulse rounded-xl bg-slate-900" />
+            <div key={i} className="h-12 animate-pulse rounded-xl bg-secondary" />
           ))}
         </div>
       )}

@@ -20,10 +20,13 @@ export default function Chat({
   subject,
   questionCount,
   onChangeSubject,
+  embedded = false,
 }: {
   subject: string;
   questionCount: number | null;
   onChangeSubject: () => void;
+  /** When hosted in the AskAI panel, the panel owns the top bar — hide ours. */
+  embedded?: boolean;
 }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -80,46 +83,48 @@ export default function Chat({
   }
 
   return (
-    <div className="flex h-dvh flex-col">
-      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-bold">{subject}</h1>
-            {questionCount != null && (
-              <p className="text-xs text-slate-400">
-                {questionCount.toLocaleString()} questions from past papers
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 gap-2">
-            {messages.length > 0 && (
+    <div className="flex h-full flex-col">
+      {!embedded && (
+        <header className="sticky top-0 z-10 border-b border-accent/60 bg-primary/90 backdrop-blur">
+          <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold">{subject}</h1>
+              {questionCount != null && (
+                <p className="text-xs text-content/60">
+                  {questionCount.toLocaleString()} questions from past papers
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 gap-2">
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setMessages([])}
+                  className="rounded-lg border border-accent px-3 py-1.5 text-xs font-medium text-content/80 hover:bg-accent"
+                >
+                  New chat
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setMessages([])}
-                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
+                onClick={onChangeSubject}
+                className="rounded-lg border border-accent px-3 py-1.5 text-xs font-medium text-content/80 hover:bg-accent"
               >
-                New chat
+                Change subject
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onChangeSubject}
-              className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
-            >
-              Change subject
-            </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl space-y-5 px-4 py-4">
           {messages.length === 0 && !loading && (
             <div className="py-10 text-center">
-              <p className="text-lg font-semibold text-slate-200">
+              <p className="text-lg font-semibold text-content">
                 Ask anything about {subject} papers
               </p>
-              <p className="mx-auto mt-2 max-w-sm text-sm text-slate-400">
+              <p className="mx-auto mt-2 max-w-sm text-sm text-content/60">
                 Frequency questions get real counts from the archive. Open-ended questions get
                 answers grounded in actual past questions, with sources.
               </p>
@@ -130,7 +135,7 @@ export default function Chat({
             if (msg.role === "user") {
               return (
                 <div key={msg.id} className="flex justify-end" data-msg-role="user">
-                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-indigo-600 px-4 py-2.5 text-sm text-white">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-brand px-4 py-2.5 text-sm text-white">
                     {msg.text}
                   </div>
                 </div>
@@ -139,7 +144,7 @@ export default function Chat({
             if (msg.role === "error") {
               return (
                 <div key={msg.id} className="flex" data-msg-role="error">
-                  <div className="max-w-[95%] rounded-2xl rounded-bl-md border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-300">
+                  <div className="max-w-[95%] rounded-2xl rounded-bl-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">
                     <p>{msg.text}</p>
                     <button
                       type="button"
@@ -154,7 +159,7 @@ export default function Chat({
             }
             return (
               <div key={msg.id} className="flex" data-msg-role="assistant">
-                <div className="w-full max-w-[95%] rounded-2xl rounded-bl-md border border-slate-800 bg-slate-900 px-4 py-3 shadow-sm">
+                <div className="w-full max-w-[95%] rounded-2xl rounded-bl-md border border-accent/60 bg-secondary px-4 py-3 shadow-sm">
                   <AnswerView res={msg.res} msgId={msg.id} />
                 </div>
               </div>
@@ -166,7 +171,7 @@ export default function Chat({
         </div>
       </main>
 
-      <footer className="border-t border-slate-800 bg-slate-950 pb-[env(safe-area-inset-bottom)]">
+      <footer className="border-t border-accent/60 bg-primary pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto max-w-2xl px-4 pt-2">
           <div className="flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
             {QUICK_ACTIONS.map((qa) => (
@@ -175,7 +180,7 @@ export default function Chat({
                 type="button"
                 disabled={loading}
                 onClick={() => send(qa.question)}
-                className="min-h-11 shrink-0 rounded-full border border-indigo-800 bg-indigo-950 px-3.5 text-xs font-medium text-indigo-300 hover:bg-indigo-900 disabled:opacity-50"
+                className="min-h-11 shrink-0 rounded-full border border-brand/40 bg-brand/10 px-3.5 text-xs font-medium text-brand hover:bg-brand/20 disabled:opacity-50"
               >
                 {qa.label}
               </button>
@@ -195,12 +200,12 @@ export default function Chat({
               placeholder={`Ask about ${subject}…`}
               maxLength={1000}
               enterKeyHint="send"
-              className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+              className="min-h-11 min-w-0 flex-1 rounded-xl border border-accent bg-secondary px-4 text-sm text-content outline-none placeholder:text-content/50 focus:border-brand focus:ring-2 focus:ring-brand/30"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+              className="min-h-11 shrink-0 rounded-xl bg-brand px-4 text-sm font-semibold text-white hover:bg-brand/90 disabled:opacity-40"
             >
               Ask
             </button>
@@ -229,12 +234,12 @@ function LoadingBubble() {
   ];
   return (
     <div className="flex" data-msg-role="loading">
-      <div className="flex items-center gap-3 rounded-2xl rounded-bl-md border border-slate-800 bg-slate-900 px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-3 rounded-2xl rounded-bl-md border border-accent/60 bg-secondary px-4 py-3 shadow-sm">
         <span className="relative flex h-4 w-4">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-60" />
-          <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-indigo-500 border-t-transparent motion-safe:animate-spin" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60" />
+          <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-brand border-t-transparent motion-safe:animate-spin" />
         </span>
-        <span className="text-sm text-slate-400" aria-live="polite">
+        <span className="text-sm text-content/60" aria-live="polite">
           {hints[phase]}
         </span>
       </div>

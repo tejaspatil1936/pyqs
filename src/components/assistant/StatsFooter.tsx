@@ -18,7 +18,7 @@ export default function StatsFooter() {
   if (failed) return null;
 
   return (
-    <footer className="mt-10 pb-8 text-center text-xs text-slate-400" data-testid="stats-footer">
+    <footer className="mt-10 pb-8 text-center text-xs text-content/60" data-testid="stats-footer">
       {stats ? (
         <p>
           {stats.questions.total.toLocaleString()} questions · {(stats.papers.done ?? 0).toLocaleString()}{" "}
