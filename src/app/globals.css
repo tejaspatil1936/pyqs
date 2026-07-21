@@ -60,3 +60,10 @@ body {
 .cite-flash {
     animation: cite-flash 1.6s ease-out;
 }
+
+/* Citation-thread hover/focus sync: a brand ring on the emphasised source row
+   and its paper card. Follows each element's own border-radius. */
+[data-thread-emph="1"] {
+    box-shadow: 0 0 0 1.5px hsl(var(--brand));
+    transition: box-shadow 0.15s ease-out;
+}

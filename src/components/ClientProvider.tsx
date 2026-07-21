@@ -8,6 +8,7 @@ import { AskAiProvider, useAskAi } from "@/contexts/AskAiContext"
 import GhostCursor from "./animations/GhostCursor"
 import AskAiPanel from "./assistant/AskAiPanel"
 import AskAiFab from "./assistant/AskAiFab"
+import CitationThreads from "./assistant/CitationThreads"
 
 interface ClientProviderProps {
     children: ReactNode
@@ -36,6 +37,7 @@ function App({ children }: { children: ReactNode }) {
                 <>
                     <AskAiPanel />
                     <AskAiFab />
+                    <CitationThreads />
                 </>
             )}
             {cursorStyle === "ghost" && <GhostCursor />}
