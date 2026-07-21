@@ -82,15 +82,14 @@ export default function Chat({
     }
   }
 
-  // The most recent answer that carries citations owns the citation threads.
-  let latestCitedId: number | null = null;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role === "assistant" && (m.res.citations?.length ?? 0) > 0) {
-      latestCitedId = m.id;
-      break;
-    }
-  }
+  // Only the latest answer owns the citation threads: they clear the moment a
+  // new question is sent (last message becomes the user's) and stay cleared if
+  // that answer carries no citations (analytics, greeting, refusal).
+  const last = messages[messages.length - 1];
+  const latestCitedId: number | null =
+    last && last.role === "assistant" && (last.res.citations?.length ?? 0) > 0
+      ? last.id
+      : null;
 
   return (
     <div className="flex h-full flex-col">
