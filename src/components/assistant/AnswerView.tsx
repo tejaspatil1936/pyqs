@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { FileText } from "@phosphor-icons/react";
 
 import {
   type AskResponse,
@@ -141,7 +142,16 @@ const Prose = ({ children }: { children: string }) => (
 
 /* ---------- intent renderers ---------- */
 
-export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: number }) {
+export default function AnswerView({
+  res,
+  msgId,
+  threadActive = false,
+}: {
+  res: AskResponse;
+  msgId: number;
+  /** True on the latest cited answer — its Sources rows anchor the threads. */
+  threadActive?: boolean;
+}) {
   if (res.intent === "GREETING") {
     return (
       <div data-testid="greeting-answer" className="prose prose-sm dark:prose-invert max-w-none">
@@ -160,7 +170,14 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
     );
   }
   if (res.intent === "SEMANTIC") {
-    return <SemanticAnswer answer={res.answer} citations={res.citations ?? []} msgId={msgId} />;
+    return (
+      <SemanticAnswer
+        answer={res.answer}
+        citations={res.citations ?? []}
+        msgId={msgId}
+        threadActive={threadActive}
+      />
+    );
   }
   if (res.intent === "YEAR_TREND") {
     return <YearTrendAnswer answer={res.answer} trend={res.trend ?? null} />;
@@ -643,16 +660,107 @@ function YearTrendAnswer({
 
 /* ---------- semantic ---------- */
 
+/**
+ * Compact "Sources" rows — one per cited paper: file icon, name, year·exam
+ * chips, and a real similarity match-% badge. Collapsed beyond the first few.
+ * Rows carry data-source-file/ref so the citation-thread overlay can anchor to
+ * them; the section is marked data-sources-active on the latest cited answer so
+ * only that answer's rows draw threads.
+ */
+function Sources({
+  citations,
+  msgId,
+  active,
+  flashRef,
+}: {
+  citations: Citation[];
+  msgId: number;
+  active: boolean;
+  flashRef: number | null;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  if (citations.length === 0) return null;
+  const FIRST = 3;
+  // Reveal a jumped-to row even when it's past the fold.
+  const forceAll =
+    flashRef != null && citations.findIndex((c) => c.ref === flashRef) >= FIRST;
+  const shown = showAll || forceAll ? citations : citations.slice(0, FIRST);
+  return (
+    <section
+      data-sources-active={active ? "" : undefined}
+      className="mt-3 border-t border-accent/60 pt-3"
+    >
+      <h4 className="mb-2 text-xs font-semibold text-content/60">Sources</h4>
+      <ul className="space-y-1.5">
+        {shown.map((c) => (
+          <li key={c.ref}>
+            <a
+              id={`cite-${msgId}-${c.ref}`}
+              data-source-file={c.file_name}
+              data-source-ref={c.ref}
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={c.question_text}
+              className={`flex items-center gap-2.5 rounded-lg border border-accent/60 bg-secondary px-2.5 py-2 transition-colors hover:border-accent hover:bg-accent/20 ${flashRef === c.ref ? "cite-flash" : ""}`}
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/60">
+                <FileText size={16} weight="duotone" className="text-content/80" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-content">
+                  {c.file_name}
+                </span>
+                <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-content/60">
+                  {known(c.year) && (
+                    <span className="rounded-md bg-accent/20 px-1.5 py-0.5 font-medium">
+                      {c.year}
+                    </span>
+                  )}
+                  {known(c.exam_type) && (
+                    <span className="rounded-md bg-primary/60 px-1.5 py-0.5 font-medium">
+                      {c.exam_type}
+                    </span>
+                  )}
+                  {c.marks != null && <span>{c.marks} marks</span>}
+                </span>
+              </span>
+              {typeof c.similarity === "number" && (
+                <span
+                  className="shrink-0 rounded-md bg-brand/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-brand"
+                  title="Similarity to your question"
+                >
+                  {Math.round(c.similarity * 100)}%
+                </span>
+              )}
+            </a>
+          </li>
+        ))}
+      </ul>
+      {citations.length > FIRST && !forceAll && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-1.5 flex min-h-11 items-center text-xs font-medium text-content/60 hover:text-brand"
+        >
+          {showAll ? "Show fewer" : `${citations.length - FIRST} more`}
+        </button>
+      )}
+    </section>
+  );
+}
+
 function SemanticAnswer({
   answer,
   citations,
   msgId,
+  threadActive = false,
 }: {
   answer: string;
   citations: Citation[];
   msgId: number;
+  threadActive?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [flashRef, setFlashRef] = useState<number | null>(null);
 
   // Turn bare [n] markers into markdown links the renderer below intercepts.
@@ -669,7 +777,6 @@ function SemanticAnswer({
     .replace(/\[(\d+)\](?!\()/g, (_m, n) => `[c${n}](#cite-${n})`);
 
   const jumpTo = (ref: number) => {
-    setOpen(true);
     setFlashRef(ref);
     requestAnimationFrame(() => {
       document
@@ -713,55 +820,12 @@ function SemanticAnswer({
         </ReactMarkdown>
       </div>
 
-      {citations.length > 0 && (
-        <details
-          className="mt-3 border-t border-accent/60 pt-2"
-          open={open}
-          onToggle={(e) => setOpen(e.currentTarget.open)}
-        >
-          <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-content/60 hover:text-brand">
-            Sources — {citations.length} question{citations.length === 1 ? "" : "s"} from past
-            papers
-          </summary>
-          <ul className="space-y-2">
-            {citations.map((c) => (
-              <li
-                key={c.ref}
-                id={`cite-${msgId}-${c.ref}`}
-                className={`rounded-lg border border-accent/60 bg-content/5 p-2.5 ${flashRef === c.ref ? "cite-flash" : ""}`}
-              >
-                <div className="flex items-start gap-2">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-brand/20 text-[11px] font-bold text-brand">
-                    {c.ref}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <TopicChip topic={c.topic} />
-                    <ExpandableText
-                      text={c.question_text}
-                      className="text-xs leading-snug text-content/80"
-                    />
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-content/60">
-                      {known(c.year) && <span>{c.year}</span>}
-                      {known(c.exam_type) && (
-                        <span className="rounded bg-accent px-1.5">{c.exam_type}</span>
-                      )}
-                      {c.marks != null && <span>{c.marks} marks</span>}
-                      <a
-                        href={c.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex min-h-11 items-center font-medium text-brand underline-offset-2 hover:underline"
-                      >
-                        Open paper ↗
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <Sources
+        citations={citations}
+        msgId={msgId}
+        active={threadActive}
+        flashRef={flashRef}
+      />
     </div>
   );
 }

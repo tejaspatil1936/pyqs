@@ -82,6 +82,16 @@ export default function Chat({
     }
   }
 
+  // The most recent answer that carries citations owns the citation threads.
+  let latestCitedId: number | null = null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant" && (m.res.citations?.length ?? 0) > 0) {
+      latestCitedId = m.id;
+      break;
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       {!embedded && (
@@ -160,7 +170,11 @@ export default function Chat({
             return (
               <div key={msg.id} className="flex" data-msg-role="assistant">
                 <div className="w-full max-w-[95%] rounded-2xl rounded-bl-md border border-accent/60 bg-secondary px-4 py-3 shadow-sm">
-                  <AnswerView res={msg.res} msgId={msg.id} />
+                  <AnswerView
+                    res={msg.res}
+                    msgId={msg.id}
+                    threadActive={msg.id === latestCitedId}
+                  />
                 </div>
               </div>
             );
