@@ -26,6 +26,9 @@ body {
     font-family: "Inter", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* The AskAI panel is kept mounted and translated off-screen when closed;
+       clip horizontal overflow so it never adds a scrollbar. */
+    overflow-x: clip;
 }
 
 ::-webkit-scrollbar {

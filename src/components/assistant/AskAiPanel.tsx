@@ -338,15 +338,16 @@ export default function AskAiPanel() {
         window.addEventListener("pointerup", onUp)
     }
 
-    // Desktop = right-docked split; mobile = bottom sheet.
-    const motionProps = isDesktop
-        ? { initial: { x: "100%" }, animate: { x: 0 }, exit: { x: "100%" } }
-        : { initial: { y: "100%" }, animate: { y: 0 }, exit: { y: "100%" } }
+    // The panel stays mounted (translated off-screen when closed) so the
+    // conversation survives close/reopen — "reopening with an answer still on
+    // screen re-draws". Desktop = right-docked split; mobile = bottom sheet.
+    const closedOffset = isOpen ? 0 : "100%"
+    const animate = isDesktop ? { x: closedOffset } : { y: closedOffset }
 
     return (
-        <AnimatePresence>
-            {isOpen && (
-                <>
+        <>
+            <AnimatePresence>
+                {isOpen && !isDesktop && (
                     <motion.div
                         key="askai-scrim"
                         initial={{ opacity: 0 }}
@@ -354,26 +355,33 @@ export default function AskAiPanel() {
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         onClick={close}
-                        className="fixed inset-0 z-[59] bg-black/50 lg:hidden"
+                        className="fixed inset-0 z-[59] bg-black/50"
                         aria-hidden="true"
                     />
+                )}
+            </AnimatePresence>
 
-                    <motion.aside
-                        key="askai-panel"
-                        {...motionProps}
-                        transition={{ type: "tween", duration: 0.3, ease: "easeOut" }}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label="Ask AI"
-                        style={isDesktop ? { width: panelWidth } : undefined}
-                        data-askai-panel=""
-                        className={`fixed z-[60] flex flex-col border-accent/60 bg-primary text-content shadow-2xl ${
-                            isDesktop
-                                ? "right-0 top-0 h-[100dvh] border-l"
-                                : "inset-x-0 bottom-0 h-[85dvh] rounded-t-2xl border-t"
-                        }`}
-                    >
-                        {isDesktop && (
+            <motion.aside
+                initial={false}
+                animate={animate}
+                transition={{ type: "tween", duration: 0.3, ease: "easeOut" }}
+                role="dialog"
+                aria-modal={isOpen ? "true" : undefined}
+                aria-label="Ask AI"
+                aria-hidden={!isOpen}
+                inert={!isOpen ? true : undefined}
+                data-askai-panel=""
+                style={{
+                    ...(isDesktop ? { width: panelWidth } : {}),
+                    pointerEvents: isOpen ? undefined : "none",
+                }}
+                className={`fixed z-[60] flex flex-col border-accent/60 bg-primary text-content shadow-2xl ${
+                    isDesktop
+                        ? "right-0 top-0 h-[100dvh] border-l"
+                        : "inset-x-0 bottom-0 h-[85dvh] rounded-t-2xl border-t"
+                }`}
+            >
+                {isDesktop && (
                             <div
                                 onPointerDown={startResize}
                                 role="separator"
@@ -448,9 +456,7 @@ export default function AskAiPanel() {
                                 onChangeSubject={() => setPicking(true)}
                             />
                         </div>
-                    </motion.aside>
-                </>
-            )}
-        </AnimatePresence>
+            </motion.aside>
+        </>
     )
 }
