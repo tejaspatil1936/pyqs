@@ -39,6 +39,8 @@ interface AskAiContextType {
     setPanelWidth: (px: number) => void
     /** True at ≥1024px — the split (and citation threads) are desktop-only. */
     isDesktop: boolean
+    /** False once a health probe shows the RAG backend absent/down → hide it all. */
+    available: boolean
 }
 
 const AskAiContext = createContext<AskAiContextType | undefined>(undefined)
@@ -58,6 +60,25 @@ export function AskAiProvider({ children }: { children: ReactNode }) {
     )
     const [panelWidth, setPanelWidthState] = useState(DEFAULT_WIDTH)
     const [isDesktop, setIsDesktop] = useState(false)
+    const [available, setAvailable] = useState(true)
+
+    // One-shot health probe: if the RAG backend is absent (no DATABASE_URL) or
+    // down, hide the whole assistant gracefully rather than offer a dead panel.
+    useEffect(() => {
+        let alive = true
+        fetch("/api/health")
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error("health"))))
+            .then((b: { ok?: boolean; db?: { ok?: boolean } }) => {
+                if (alive && (b?.ok === false || b?.db?.ok === false))
+                    setAvailable(false)
+            })
+            .catch(() => {
+                if (alive) setAvailable(false)
+            })
+        return () => {
+            alive = false
+        }
+    }, [])
 
     // Track the desktop breakpoint (client-only → SSR-safe, starts false).
     useEffect(() => {
@@ -109,6 +130,7 @@ export function AskAiProvider({ children }: { children: ReactNode }) {
             panelWidth,
             setPanelWidth,
             isDesktop,
+            available,
         }),
         [
             isOpen,
@@ -120,6 +142,7 @@ export function AskAiProvider({ children }: { children: ReactNode }) {
             panelWidth,
             setPanelWidth,
             isDesktop,
+            available,
         ]
     )
 

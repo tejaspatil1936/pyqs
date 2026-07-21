@@ -17,11 +17,11 @@ interface ClientProviderProps {
 
 function App({ children }: { children: ReactNode }) {
     const { cursorStyle } = useSettings()
-    const { isOpen, panelWidth, isDesktop } = useAskAi()
+    const { isOpen, panelWidth, isDesktop, available } = useAskAi()
     const pathname = usePathname()
-    // /assistant is the standalone assistant page — don't stack the global
-    // panel on top of it.
-    const showAssistant = pathname !== "/assistant"
+    // Hidden on /assistant (that page IS the assistant) and whenever the RAG
+    // backend is absent/down — a graceful vanish, not a dead panel.
+    const showAssistant = pathname !== "/assistant" && available
     // Desktop: push content left by the panel's width so it splits the
     // viewport. Mobile: the panel is a bottom sheet — no push.
     const pushed = showAssistant && isOpen && isDesktop
