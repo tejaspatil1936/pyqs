@@ -184,7 +184,7 @@ export default function Chat({
         </div>
       </main>
 
-      <footer className="border-t border-accent/60 bg-primary pb-[env(safe-area-inset-bottom)]">
+      <footer className="askai-glass border-t border-accent/60 pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto max-w-2xl px-4 pt-2">
           <div className="flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
             {QUICK_ACTIONS.map((qa) => (

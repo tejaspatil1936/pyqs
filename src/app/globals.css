@@ -107,3 +107,34 @@ body {
         transform: none;
     }
 }
+
+/* Glassmorphism for the AskAI panel's CONTAINER surfaces only (panel bg,
+   chip row, input bar). Content cards inside stay solid host surfaces for
+   readability. Per-theme surface alpha: light washes out fast under blur, so
+   it stays more opaque; dark can be more transparent. */
+.askai-glass {
+    background-color: hsl(var(--primary) / 0.82);
+    -webkit-backdrop-filter: saturate(1.4) blur(14px);
+    backdrop-filter: saturate(1.4) blur(14px);
+}
+.dark .askai-glass {
+    background-color: hsl(var(--primary) / 0.62);
+}
+/* No backdrop-filter support → solid surface fallback. */
+@supports not (
+    (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))
+) {
+    .askai-glass,
+    .dark .askai-glass {
+        background-color: hsl(var(--primary));
+    }
+}
+/* Respect reduced transparency (accessibility) → solid, no blur. */
+@media (prefers-reduced-transparency: reduce) {
+    .askai-glass,
+    .dark .askai-glass {
+        background-color: hsl(var(--primary));
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+    }
+}

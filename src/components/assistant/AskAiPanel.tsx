@@ -396,7 +396,7 @@ export default function AskAiPanel() {
                     ...(isDesktop ? { width: panelWidth } : {}),
                     pointerEvents: isOpen ? undefined : "none",
                 }}
-                className={`fixed z-[60] flex flex-col border-accent/60 bg-primary text-content shadow-2xl ${
+                className={`askai-glass fixed z-[60] flex flex-col border-accent/60 text-content shadow-2xl ${
                     isDesktop
                         ? "right-0 top-0 h-[100dvh] border-l"
                         : "inset-x-0 bottom-0 h-[85dvh] rounded-t-2xl border-t"
