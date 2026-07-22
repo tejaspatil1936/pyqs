@@ -360,10 +360,7 @@ const SubjectPapersView = () => {
 
   // Grid view
   const renderGridView = () => (
-    <div
-      data-papers-list=""
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8"
-    >
+    <div data-papers-list="" className="papers-grid gap-6 sm:gap-8">
       {filteredPapers.map((paper, index) => (
         <FadeIn
           key={`${paper.fileName}-${index}`}

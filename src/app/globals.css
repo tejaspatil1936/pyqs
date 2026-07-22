@@ -70,3 +70,13 @@ body {
     box-shadow: 0 0 0 1.5px hsl(var(--brand));
     transition: box-shadow 0.15s ease-out;
 }
+
+/* Paper grid column count responds to the grid's OWN width, not the viewport,
+   so opening the AskAI split (which shrinks the grid) degrades 4→3→2→1 columns
+   gracefully instead of squeezing fixed viewport columns. min(280px,100%) keeps
+   cards ≥280px yet never overflows a narrow container. Column counts match the
+   host's viewport breakpoints at full (panel-closed) width. */
+.papers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+}

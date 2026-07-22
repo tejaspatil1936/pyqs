@@ -193,8 +193,23 @@ export function AskAiPanelBody({
 /* ---------- container ---------- */
 
 /**
+ * RESPONSIVE MODEL (the integration's contract; the host pages keep their own
+ * responsive design untouched):
+ *   <1024px  — no split. Full-width host paper grid exactly as before; the
+ *              floating "Ask AI" pill opens a full-height bottom sheet; no
+ *              citation threads.
+ *   1024–1279 — split allowed but constrained: panel ≥360px and the list keeps
+ *              ≥55% (≈≥560px). The width clamp guarantees this, so the panel
+ *              never has to auto-collapse to keep the grid usable.
+ *   ≥1280    — full split: panel default ~40%, drag-resizable within 35–45%,
+ *              the list gets the rest.
+ *   ≥1920    — the panel caps at 640px so wide answers stay readable; the list
+ *              absorbs the extra width.
+ * The paper grid (.papers-grid) sizes columns to its own width (auto-fill), so
+ * it degrades 4→3→2→1 as the panel takes space rather than squeezing.
+ *
  * Global split-view AskAI panel: a right-docked split on desktop (lg+, paired
- * with the content push in ClientProvider) and a full-screen drawer on mobile.
+ * with the content push in ClientProvider) and a bottom sheet on mobile.
  *
  * Subject binding: on paper-browse pages the subject is ALWAYS the browsed
  * subject (from AskAiContext, fed by the route), validated against the corpus

@@ -13,12 +13,19 @@ import {
 const WIDTH_KEY = "pyq.askai.width"
 const DEFAULT_WIDTH = 448
 
-/** Clamp the desktop panel width to the 35–45% band (with a small px floor). */
+/**
+ * Clamp the desktop panel width: 35–45% of the viewport, but never below 360px
+ * (keeps intents readable) and never above 640px (so on very large screens the
+ * answer column doesn't become unreadably wide, and the list keeps most of the
+ * width). At ≥1024px this guarantees the list stays ≥55% ≈ ≥560px, so the panel
+ * never has to auto-collapse to keep the grid usable.
+ */
 function clampWidth(px: number): number {
     if (typeof window === "undefined") return px
-    const min = Math.max(360, Math.round(window.innerWidth * 0.35))
-    const max = Math.round(window.innerWidth * 0.45)
-    return Math.min(Math.max(px, min), max)
+    const w = window.innerWidth
+    const hi = Math.min(640, Math.round(w * 0.45))
+    const lo = Math.min(hi, Math.max(360, Math.round(w * 0.35)))
+    return Math.min(Math.max(px, lo), hi)
 }
 
 interface AskAiContextType {
