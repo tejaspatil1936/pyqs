@@ -2,6 +2,7 @@
 
 import { useEffect, useState, ReactNode } from "react"
 import { usePathname } from "next/navigation"
+import { MotionConfig } from "framer-motion"
 import { ThemeProvider } from "next-themes"
 import { SettingsProvider, useSettings } from "@/contexts/SettingsContext"
 import { AskAiProvider, useAskAi } from "@/contexts/AskAiContext"
@@ -61,11 +62,14 @@ export default function ClientProvider({
 
     return (
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-            <SettingsProvider>
-                <AskAiProvider>
-                    <App>{children}</App>
-                </AskAiProvider>
-            </SettingsProvider>
+            {/* Honour prefers-reduced-motion for the panel/collapse/FAB slides. */}
+            <MotionConfig reducedMotion="user">
+                <SettingsProvider>
+                    <AskAiProvider>
+                        <App>{children}</App>
+                    </AskAiProvider>
+                </SettingsProvider>
+            </MotionConfig>
         </ThemeProvider>
     )
 }

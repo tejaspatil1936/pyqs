@@ -109,6 +109,14 @@ export function AskAiProvider({ children }: { children: ReactNode }) {
         }
     }, [])
 
+    // Re-clamp on viewport resize / browser zoom so the panel stays in the
+    // 35–45% band (and ≤640px) at the new width — never overruns the list.
+    useEffect(() => {
+        const onResize = () => setPanelWidthState((w) => clampWidth(w))
+        window.addEventListener("resize", onResize, { passive: true })
+        return () => window.removeEventListener("resize", onResize)
+    }, [])
+
     const open = useCallback(() => setIsOpen(true), [])
     const close = useCallback(() => setIsOpen(false), [])
     const toggle = useCallback(() => setIsOpen((v) => !v), [])

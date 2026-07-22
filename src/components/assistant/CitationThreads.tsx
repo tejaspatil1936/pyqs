@@ -39,6 +39,13 @@ export default function CitationThreads() {
     const [hoveredFile, setHoveredFile] = useState<string | null>(null)
     const [reduced, setReduced] = useState(false)
     const rafRef = useRef<number | null>(null)
+    // Cache the expensive element lookups; only rebuild when the DOM set
+    // changes (a MutationObserver marks it dirty). Rects still re-measure every
+    // frame — they move on scroll — but the O(cards) querySelectorAll no longer
+    // runs per frame, keeping the scroll/resize rAF work off the long-task line.
+    const cardByFileRef = useRef<Map<string, HTMLElement>>(new Map())
+    const rowsRef = useRef<HTMLElement[]>([])
+    const dirtyRef = useRef(true)
 
     useEffect(() => setMounted(true), [])
 
@@ -79,24 +86,30 @@ export default function CitationThreads() {
                 setThreads([])
                 return
             }
-            const rows = Array.from(
-                document.querySelectorAll<HTMLElement>(
-                    "[data-sources-active] [data-source-file]"
+            // Rebuild the row/card lookups only when the DOM set changed.
+            if (dirtyRef.current) {
+                rowsRef.current = Array.from(
+                    document.querySelectorAll<HTMLElement>(
+                        "[data-sources-active] [data-source-file]"
+                    )
                 )
-            )
+                const m = new Map<string, HTMLElement>()
+                // First card per file (duplicate uploads collapse to the first).
+                document
+                    .querySelectorAll<HTMLElement>("[data-paper-file]")
+                    .forEach((el) => {
+                        const f = el.dataset.paperFile
+                        if (f && !m.has(f)) m.set(f, el)
+                    })
+                cardByFileRef.current = m
+                dirtyRef.current = false
+            }
+            const rows = rowsRef.current
+            const cardByFile = cardByFileRef.current
             if (rows.length === 0) {
                 setThreads([])
                 return
             }
-
-            // First card per file (duplicate uploads collapse to the first).
-            const cardByFile = new Map<string, HTMLElement>()
-            document
-                .querySelectorAll<HTMLElement>("[data-paper-file]")
-                .forEach((el) => {
-                    const f = el.dataset.paperFile
-                    if (f && !cardByFile.has(f)) cardByFile.set(f, el)
-                })
 
             const scroller = document.getElementById(SCROLL_ID)
             const listRect = scroller?.getBoundingClientRect()
@@ -105,10 +118,12 @@ export default function CitationThreads() {
 
             for (const row of rows) {
                 if (out.length >= MAX_THREADS) break
+                if (!row.isConnected) continue // stale cached node (rebuild pending)
                 const file = row.dataset.sourceFile
                 if (!file || seen.has(file)) continue
                 const card = cardByFile.get(file)
-                if (!card) continue // cited paper not in the current view → no thread
+                // no card / not in the current view / stale node → no thread
+                if (!card || !card.isConnected) continue
                 seen.add(file)
 
                 const r = row.getBoundingClientRect()
@@ -134,11 +149,18 @@ export default function CitationThreads() {
             setThreads(out)
         }
 
+        // Scroll/resize just re-measure rects (cheap). Set changes rebuild the
+        // cached lookups first.
         const schedule = () => {
             if (rafRef.current == null)
                 rafRef.current = requestAnimationFrame(compute)
         }
+        const scheduleDirty = () => {
+            dirtyRef.current = true
+            schedule()
+        }
 
+        dirtyRef.current = true
         schedule()
 
         window.addEventListener("scroll", schedule, {
@@ -156,7 +178,7 @@ export default function CitationThreads() {
         if (scroller) ro.observe(scroller)
 
         // Card set changes (filter/search/view toggle) + the active answer moving.
-        const mo = new MutationObserver(schedule)
+        const mo = new MutationObserver(scheduleDirty)
         if (list)
             mo.observe(list, { childList: true, subtree: true, attributes: true })
         if (panel)
@@ -167,7 +189,7 @@ export default function CitationThreads() {
                 attributeFilter: ["data-sources-active"],
             })
         // Modal mount/unmount lives at the body level.
-        const bodyMo = new MutationObserver(schedule)
+        const bodyMo = new MutationObserver(scheduleDirty)
         bodyMo.observe(document.body, { childList: true })
 
         // Hover / keyboard-focus sync — emphasise the thread and both ends.
