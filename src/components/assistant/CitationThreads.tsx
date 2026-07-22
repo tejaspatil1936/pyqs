@@ -9,8 +9,8 @@ import { useAskAi } from "@/contexts/AskAiContext"
  * (pointer-events:none, aria-hidden, z-40 — above content, below panel/modals),
  * desktop-only, hidden while a preview modal is up. Client-only → SSR-safe.
  *
- *   IDLE   (panel open, no cited answer): quiet ambient threads from the nearest
- *          visible paper cards to a single pulsing anchor dot on the panel's
+ *   IDLE   (panel open, no cited answer): quiet ambient threads from every
+ *          visible paper card to a single pulsing anchor dot on the panel's
  *          left edge — "the archive is wired to the AI". Thinner + fainter than
  *          citation threads.
  *   ACTIVE (a cited answer on screen): citation threads from the answer's Source
@@ -32,7 +32,8 @@ interface Thread {
     faded: boolean // cite only: clamped to the list edge (card scrolled off)
 }
 
-const MAX_THREADS = 8
+const MAX_THREADS = 8 // citation threads (specific cited papers)
+const IDLE_MAX = 16 // ambient idle fan — every visible card, bounded for safety
 const SCROLL_ID = "scrollable-content"
 
 /** Gentle, direction-agnostic horizontal S-curve (control points at mid-x). */
@@ -164,32 +165,31 @@ export default function CitationThreads() {
                 return
             }
 
-            // ── IDLE: ambient threads from nearest visible cards to the dot ──
+            // ── IDLE: ambient fan from EVERY visible card (all columns) to the
+            // dot. Connecting only the nearest cards left a whole far column
+            // threadless (reads as a bug); a fan to one point isn't a hairball.
+            // Bounded for safety on dense grids — DOM order keeps top rows, so
+            // every column stays represented.
             const pr = panelEl.getBoundingClientRect()
             const ax = pr.left
             const ay = pr.top + pr.height / 2
-            const vis: { file: string; c: DOMRect; dist: number }[] = []
+            const out: Thread[] = []
             for (const card of cardByFile.values()) {
+                if (out.length >= IDLE_MAX) break
                 if (!card.isConnected) continue
                 const c = card.getBoundingClientRect()
                 if (c.width === 0) continue
                 if (listRect && (c.bottom < listRect.top || c.top > listRect.bottom))
                     continue // scrolled out of the list viewport
-                const cy = c.top + c.height / 2
-                vis.push({
-                    file: card.dataset.paperFile!,
-                    c,
-                    dist: Math.hypot(c.right - ax, cy - ay),
+                const file = card.dataset.paperFile!
+                out.push({
+                    key: `idle-${file}`,
+                    file,
+                    kind: "idle",
+                    d: bezier(c.right, c.top + c.height / 2, ax, ay),
+                    faded: false,
                 })
             }
-            vis.sort((a, b) => a.dist - b.dist)
-            const out: Thread[] = vis.slice(0, MAX_THREADS).map(({ file, c }) => ({
-                key: `idle-${file}`,
-                file,
-                kind: "idle",
-                d: bezier(c.right, c.top + c.height / 2, ax, ay),
-                faded: false,
-            }))
             setThreads(out)
             setAnchor(out.length ? { x: ax, y: ay } : null)
         }
