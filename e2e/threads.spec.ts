@@ -25,8 +25,10 @@ async function openPanelAndAsk(page: Page) {
     await input.press("Enter")
 }
 
-const threadPaths = (page: Page) =>
-    page.locator("svg[data-citation-threads] path")
+const citeThreads = (page: Page) =>
+    page.locator('svg[data-citation-threads] path[data-thread-kind="cite"]')
+const idleThreads = (page: Page) =>
+    page.locator('svg[data-citation-threads] path[data-thread-kind="idle"]')
 
 test.describe("citation threads — desktop", () => {
     test.use({ viewport: { width: 1280, height: 800 } })
@@ -47,24 +49,26 @@ test.describe("citation threads — desktop", () => {
         expect(box!.height, "panel on-screen height").toBeGreaterThan(600)
         expect(box!.y, "panel top at 0").toBeLessThanOrEqual(1)
 
-        // 1) Threads draw to the cited cards.
-        await expect(threadPaths(page).first()).toBeVisible()
-        expect(await threadPaths(page).count()).toBeGreaterThan(0)
+        // 1) CITATION threads draw to the cited cards; idle threads retract
+        //    (they fade out via AnimatePresence, so wait for them to reach 0).
+        await expect(citeThreads(page).first()).toBeVisible()
+        expect(await citeThreads(page).count()).toBeGreaterThan(0)
+        await expect(idleThreads(page)).toHaveCount(0)
 
         // 2) Scroll the list — threads persist.
         await page.locator("#scrollable-content").evaluate((el) => (el.scrollTop += 180))
         await page.waitForTimeout(250)
-        expect(await threadPaths(page).count()).toBeGreaterThan(0)
+        expect(await citeThreads(page).count()).toBeGreaterThan(0)
 
         // 3) Resize — threads persist.
         await page.setViewportSize({ width: 1440, height: 900 })
         await page.waitForTimeout(250)
-        expect(await threadPaths(page).count()).toBeGreaterThan(0)
+        expect(await citeThreads(page).count()).toBeGreaterThan(0)
 
         // 4) Toggle grid → list — threads recompute.
         await page.getByRole("button", { name: "List view" }).click()
         await page.waitForTimeout(400)
-        expect(await threadPaths(page).count()).toBeGreaterThan(0)
+        expect(await citeThreads(page).count()).toBeGreaterThan(0)
 
         // 5) Filter (best-effort) — recompute without error. (No Escape — the
         //    panel treats Escape as close.)
@@ -72,22 +76,23 @@ test.describe("citation threads — desktop", () => {
         if (await filterBtn.count()) {
             await filterBtn.click()
             await page.waitForTimeout(400)
-            expect(await threadPaths(page).count()).toBeGreaterThanOrEqual(0)
+            expect(await citeThreads(page).count()).toBeGreaterThanOrEqual(0)
             await filterBtn.click()
             await page.waitForTimeout(200)
         }
 
-        // 6) Close (Escape) — threads clear.
+        // 6) Close (Escape) — ALL threads (both kinds) clear.
         await page.keyboard.press("Escape")
-        await page.waitForTimeout(400)
-        expect(await threadPaths(page).count()).toBe(0)
+        await expect(page.locator("svg[data-citation-threads] path")).toHaveCount(0)
+        await expect(page.locator("[data-idle-anchor]")).toHaveCount(0)
 
-        // 7) Reopen — the answer is still on screen → threads re-draw.
+        // 7) Reopen — the answer is still on screen → citation threads re-draw.
         await page.getByRole("button", { name: /Ask AI about/ }).click()
         await page.waitForTimeout(500)
-        expect(await threadPaths(page).count()).toBeGreaterThan(0)
+        expect(await citeThreads(page).count()).toBeGreaterThan(0)
 
-        // 8) New question with no citations → threads clear.
+        // 8) New question with no citations → citation threads clear and the
+        //    overlay transitions back to IDLE ambient threads + the anchor dot.
         await page.route("**/api/ask", (route) =>
             route.fulfill({
                 json: { intent: "ANALYTICS", answer: "No sources here.", clusters: [] },
@@ -96,8 +101,9 @@ test.describe("citation threads — desktop", () => {
         const input = page.getByPlaceholder(/Ask about/)
         await input.fill("most repeated questions")
         await input.press("Enter")
-        await page.waitForTimeout(700)
-        expect(await threadPaths(page).count()).toBe(0)
+        await expect(citeThreads(page)).toHaveCount(0)
+        await expect(idleThreads(page).first()).toBeVisible()
+        await expect(page.locator("[data-idle-anchor]")).toHaveCount(1)
 
         expect(errors, `console errors:\n${errors.join("\n")}`).toEqual([])
     })

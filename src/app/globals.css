@@ -80,3 +80,30 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
 }
+
+/* Idle citation-thread anchor: a small host-accent dot on the panel's left
+   edge that gently pulses. CSS-only (no per-frame JS); a soft ring gives it
+   presence without an orb/glow. */
+@keyframes askai-idle-pulse {
+    0%,
+    100% {
+        opacity: 0.55;
+        transform: scale(0.82);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+}
+.askai-idle-dot {
+    background-color: hsl(var(--accent));
+    box-shadow: 0 0 0 3px hsl(var(--accent) / 0.35);
+    animation: askai-idle-pulse 2.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .askai-idle-dot {
+        animation: none;
+        opacity: 0.85;
+        transform: none;
+    }
+}
