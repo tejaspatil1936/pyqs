@@ -339,10 +339,16 @@ export default function AskAiPanel() {
     }
 
     // The panel stays mounted (translated off-screen when closed) so the
-    // conversation survives close/reopen — "reopening with an answer still on
-    // screen re-draws". Desktop = right-docked split; mobile = bottom sheet.
-    const closedOffset = isOpen ? 0 : "100%"
-    const animate = isDesktop ? { x: closedOffset } : { y: closedOffset }
+    // conversation survives close/reopen. Desktop slides on X (right-docked
+    // split), mobile on Y (bottom sheet). BOTH axes are always specified: if we
+    // only set the active axis, framer-motion keeps the previous axis's stale
+    // value when the breakpoint flips (isDesktop starts false → the initial
+    // y:"100%" would leak into desktop, dropping the open panel below the
+    // viewport → the empty-right-pane bug).
+    const animate = {
+        x: isDesktop && !isOpen ? "100%" : 0,
+        y: !isDesktop && !isOpen ? "100%" : 0,
+    }
 
     return (
         <>
