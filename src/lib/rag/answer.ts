@@ -303,6 +303,24 @@ const NUM_LIST = String.raw`\d{1,2}(?:\s*,\s*\d{1,2})*(?:\s*,?\s*and\s+\d{1,2})?
 const NOT_A_REF = String.raw`(?!\s*(?:exams?|marks?|papers?|questions?|years?|times|of|%))`;
 
 /**
+ * Bracket characters models reach for instead of ASCII "[]".
+ *
+ * gpt-oss writes citations as CJK full-width brackets — 【1】【2】 — which the
+ * citation renderer does not recognise at all, so every source silently stops
+ * being clickable. Caught by the cross-provider contract test reading real
+ * Groq output. Canonicalized before any other citation repair runs.
+ */
+const BRACKET_VARIANTS: [RegExp, string][] = [
+  [/[\u3010\uFF3B\u2045]\s*(\d{1,2})\s*[\u3011\uFF3D\u2046]/g, "[$1]"], // 【1】［1］⁅1⁆
+];
+
+function canonicalizeBrackets(answer: string): string {
+  let out = answer;
+  for (const [re, sub] of BRACKET_VARIANTS) out = out.replace(re, sub);
+  return out;
+}
+
+/**
  * Server-side enforcement of the citation contract — the model is told to
  * emit only [n] pairs, but drift happens; broken shapes are repaired here,
  * BEFORE the client, so the renderer never has to guess. Only numbers that
@@ -316,7 +334,7 @@ export function normalizeCitations(answer: string, maxRef: number): string {
   const chip = (nums: number[]) => nums.map((n) => `[${n}]`).join("");
 
   return (
-    answer
+    canonicalizeBrackets(answer)
       // "[1, 5]" / "[1, 3, and 6]" -> "[1][3][6]"
       .replace(new RegExp(String.raw`\[(${NUM_LIST})\](?!\()`, "gi"), (m, g: string) => {
         const nums = refs(g);

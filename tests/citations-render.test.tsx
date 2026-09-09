@@ -86,6 +86,25 @@ describe("citation marker rendering", () => {
     );
   });
 
+  it("server-side contract repair: full-width brackets from gpt-oss", () => {
+    // Real Groq output shape. Left alone these render as literal text and
+    // every source silently stops being clickable.
+    expect(
+      normalizeCitations("TCP is connection-oriented\u30101\u3011\u30102\u3011.", 10),
+    ).toBe("TCP is connection-oriented[1][2].");
+    expect(normalizeCitations("Use UDP for DNS\uFF3B3\uFF3D.", 10)).toBe("Use UDP for DNS[3].");
+  });
+
+  it("full-width citations render as chips end-to-end", () => {
+    const normalized = normalizeCitations(
+      "TCP is reliable\u30101\u3011\u30102\u3011 while UDP is not\u30105\u3011.",
+      10,
+    );
+    const html = renderSemantic(normalized, [1, 2, 5]);
+    for (const n of [1, 2, 5]) expect(html).toContain(`>${n}</button>`);
+    expect(html).not.toContain("\u3010");
+  });
+
   it("server-side contract repair never touches data numbers", () => {
     expect(normalizeCitations("asked in 9 exams, worth 8 marks", 10)).toBe(
       "asked in 9 exams, worth 8 marks",
