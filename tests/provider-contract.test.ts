@@ -84,6 +84,12 @@ function expectProseContract(answer: string, maxWords: number) {
   expect(verdict.problems.filter((p) => p.startsWith("missing bold verdict"))).toEqual([]);
   expect(verdict.problems.filter((p) => p.startsWith("too long"))).toEqual([]);
   for (const re of BANNED_PHRASES) expect(answer).not.toMatch(re);
+  // Both prompts forbid tables; the ranked table under the answer already
+  // carries the detail. gpt-oss appends one anyway, so it is stripped
+  // server-side — assert none survives, whoever wrote the prose.
+  expect(answer, "markdown table duplicates the ranked data").not.toMatch(
+    /\n[ \t]*\|[ \t]*:?-{2,}/,
+  );
 }
 
 /** No internal prompt vocabulary may reach a student, on any provider. */

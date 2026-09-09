@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { guardOutput, stripContradictoryPreamble, stripInternalNames } from "../src/lib/rag/answer";
+import {
+  guardOutput,
+  stripContradictoryPreamble,
+  stripInternalNames,
+  stripRedundantTables,
+} from "../src/lib/rag/answer";
 import { classifyHeuristic } from "../src/lib/rag/intent";
 import { normalizeQuery } from "../src/lib/rag/normalize";
 import { prefilterAbuse } from "../src/lib/rag/scope";
@@ -135,5 +140,36 @@ describe("normalizeQuery + sloppy real-world phrasing", () => {
     const c = classifyHeuristic(normalizeQuery("kitne questions on hashing aate hain"));
     expect(c.intent).toBe("TOPIC_ANALYTICS");
     expect(c.topic).toMatch(/hash/i);
+  });
+});
+
+describe("stripRedundantTables", () => {
+  it("drops a table that restates the ranked data below the answer", () => {
+    // Real gpt-oss output shape: prose, then the same rows again as a table.
+    const answer = [
+      "**Skip only the rarely-asked topics — the top topics are not skippable.**",
+      "",
+      "- Learn **IP Addressing and Subnetting** first — **18** exams.",
+      "",
+      "| Topic | Exams | Marks |",
+      "|-------|-------|-------|",
+      "| **IP Addressing and Subnetting** | 18 | 242 |",
+      "| **TCP vs UDP Applications** | 18 | 156 |",
+    ].join("\n");
+    const out = stripRedundantTables(answer);
+    expect(out).not.toContain("|");
+    expect(out).toContain("Learn **IP Addressing and Subnetting** first");
+    expect(out).toMatch(/^\*\*Skip only/);
+  });
+
+  it("leaves ordinary prose, bullets and citations untouched", () => {
+    const s =
+      "**TCP is reliable.**\n\n- Use TCP for file transfer [1][2].\n- Use UDP for DNS [3].";
+    expect(stripRedundantTables(s)).toBe(s);
+  });
+
+  it("does not eat a lone pipe inside prose", () => {
+    const s = "**Verdict.** The command is `ls | grep foo` in the 2023 paper [1].";
+    expect(stripRedundantTables(s)).toBe(s);
   });
 });

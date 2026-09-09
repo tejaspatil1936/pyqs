@@ -22,6 +22,7 @@ import {
   normalizeCitations,
   stripContradictoryPreamble,
   stripInternalNames,
+  stripRedundantTables,
   type SynthResult,
   synthesizeAnswer,
   synthesizeStudyGuide,
@@ -503,7 +504,7 @@ export async function POST(req: Request) {
       if (guardedPlan.flagged) {
         return respond({ intent: "REFUSED", answer: guardedPlan.answer });
       }
-      let planAnswer = stripInternalNames(guardedPlan.answer);
+      let planAnswer = stripRedundantTables(stripInternalNames(guardedPlan.answer));
 
       // Skip-contract guard, independent of the prompt: retry once with the
       // concrete violation, then fall back to a deterministic safe answer —
@@ -523,7 +524,9 @@ export async function POST(req: Request) {
               tail,
               `Your previous draft violated the skip contract: ${violation}. Rewrite it obeying every rule.`,
             );
-            planAnswer = stripInternalNames(guardOutput(redo.text, subject, question).answer);
+            planAnswer = stripRedundantTables(
+              stripInternalNames(guardOutput(redo.text, subject, question).answer),
+            );
             violation = skipContractViolation(planAnswer, protectedTopics);
           } catch {
             // fall through to the deterministic answer
@@ -771,7 +774,7 @@ export async function POST(req: Request) {
     // preamble), then citation-shape normalization — before any client
     // ever sees the text. Worked solutions get the verification caution.
     let answer = stripContradictoryPreamble(guarded.answer);
-    answer = stripInternalNames(answer);
+    answer = stripRedundantTables(stripInternalNames(answer));
     answer = normalizeCitations(answer, citations.length);
     if (solving) answer += SOLUTION_CAUTION;
     return respond({ intent, answer, citations });

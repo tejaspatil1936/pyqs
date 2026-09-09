@@ -397,6 +397,23 @@ const INTERNAL_NAMES: [RegExp, string][] = [
   [/\bskip_candidates\b/gi, "the skip candidates"],
 ];
 
+/**
+ * Both prompts forbid tables — the ranked table under the answer already
+ * carries the detail, and the prose is capped at a few bullets. gpt-oss
+ * ignores that and appends a markdown table restating the same rows, so the
+ * student reads the same numbers twice, once in a layout the mobile UI was
+ * never designed for.
+ *
+ * Stripped deterministically rather than via a quality retry: a retry would
+ * spend an LLM call on almost every gpt-oss answer, which is exactly the
+ * quota this architecture exists to save.
+ */
+const MARKDOWN_TABLE = /(?:^|\n)[ \t]*\|.*\|[ \t]*\n[ \t]*\|[ \t]*:?-{2,}.*\n(?:[ \t]*\|.*\n?)*/g;
+
+export function stripRedundantTables(answer: string): string {
+  return answer.replace(MARKDOWN_TABLE, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /** Backup scrub: the prompt forbids internal names, but leaks still die here. */
 export function stripInternalNames(answer: string): string {
   let out = answer;
