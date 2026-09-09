@@ -43,6 +43,13 @@ export interface OpenAICompatConfig {
   headers?: Record<string, string>;
   /** Sent until a model rejects it; then dropped for the instance. */
   reasoningEffort?: string;
+  /**
+   * Hard ceiling on this provider's request timeout, regardless of what the
+   * caller asks for. Free shared pools fail by HANGING rather than erroring,
+   * and a rung deep in the ladder must not spend the whole request budget
+   * waiting — leave room to fall through and degrade honestly.
+   */
+  maxTimeoutMs?: number;
 }
 
 /**
@@ -149,7 +156,7 @@ export function createOpenAICompatAdapter(config: OpenAICompatConfig): ProviderA
 
     async generate(lane: Lane, prompt: string, opts: GenerateOptions): Promise<string> {
       const model = modelFor(lane);
-      const timeoutMs = opts.timeoutMs ?? 30_000;
+      const timeoutMs = Math.min(opts.timeoutMs ?? 30_000, config.maxTimeoutMs ?? Infinity);
       const maxTokens = opts.maxTokens ?? (lane === "classification" ? 800 : 2000);
 
       // One retry budget, spent on either dropping reasoning_effort or a 5xx.
@@ -183,10 +190,35 @@ export function createOpenAICompatAdapter(config: OpenAICompatConfig): ProviderA
         }
 
         if (resp.ok) {
-          const body = (await resp.json()) as {
-            choices?: { message?: { content?: string } }[];
+          // Reading the body can ALSO abort on the timeout signal — a slow
+          // free-tier stream trickling tokens past the deadline throws here,
+          // not at fetch(). Left unwrapped it escapes as a raw DOMException
+          // and the route 500s instead of falling to the next provider.
+          let body: {
+            choices?: { message?: { content?: string }; finish_reason?: string }[];
           };
-          const text = (body.choices?.[0]?.message?.content ?? "").trim();
+          try {
+            body = (await resp.json()) as typeof body;
+          } catch (err) {
+            recordCall(config.name, "body_read_error");
+            logCall(config.name, lane, model, "body_read_error");
+            throw new ProviderTransient(
+              `${config.name} response unreadable (${err instanceof Error ? err.name : "stream error"})`,
+              config.name,
+            );
+          }
+          const choice = body.choices?.[0];
+          const text = (choice?.message?.content ?? "").trim();
+          // Truncated mid-sentence: half an answer is worse than falling
+          // through to a provider that can finish one.
+          if (choice?.finish_reason === "length" && text) {
+            recordCall(config.name, "truncated");
+            logCall(config.name, lane, model, "truncated");
+            throw new ProviderTransient(
+              `${config.name} truncated its answer at the token cap`,
+              config.name,
+            );
+          }
           if (!text) {
             // Reasoning models can spend the whole budget thinking. Treat an
             // empty completion as transient — the next provider will answer.
@@ -199,7 +231,13 @@ export function createOpenAICompatAdapter(config: OpenAICompatConfig): ProviderA
           return text;
         }
 
-        const errText = await resp.text();
+        // Same hazard on the error path: never let a body read escape raw.
+        let errText: string;
+        try {
+          errText = await resp.text();
+        } catch {
+          errText = "";
+        }
 
         // Model doesn't take reasoning_effort (or takes different values) —
         // drop it for this instance and retry immediately.

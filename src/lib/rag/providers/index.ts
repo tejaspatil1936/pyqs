@@ -54,9 +54,16 @@ const groqAdapter = createOpenAICompatAdapter({
 });
 
 /**
- * OpenRouter's free tier. gemma-4-31b-it is instruction-tuned, fast (~2s),
- * and holds the verdict-first/citation contract — see the cross-provider
- * quality tests. Swap it with OPENROUTER_SYNTHESIS_MODEL.
+ * OpenRouter's free tier — the last rung before degraded mode.
+ *
+ * Model choice matters more here than anywhere else, because most `:free`
+ * slugs share ONE upstream pool across every OpenRouter user. Benchmarked on
+ * the real synthesis prompt (2 calls each): both gemma-4 `:free` variants
+ * returned 429 "temporarily rate-limited upstream" every time, inkling 403'd,
+ * dots-3 returned empty completions, and nemotron-3.5-lightning leaked its
+ * chain of thought into the answer. nemotron-3-super answered 2/2 in ~350ms,
+ * verdict-first and in-cap — so it is the default. Override with
+ * OPENROUTER_SYNTHESIS_MODEL.
  */
 const openrouterAdapter = createOpenAICompatAdapter({
   name: "openrouter",
@@ -65,10 +72,17 @@ const openrouterAdapter = createOpenAICompatAdapter({
   models: {
     classification: {
       env: "OPENROUTER_CLASSIFICATION_MODEL",
-      fallback: "google/gemma-4-31b-it:free",
+      fallback: "nvidia/nemotron-3-super-120b-a12b:free",
     },
-    synthesis: { env: "OPENROUTER_SYNTHESIS_MODEL", fallback: "google/gemma-4-31b-it:free" },
+    synthesis: {
+      env: "OPENROUTER_SYNTHESIS_MODEL",
+      fallback: "nvidia/nemotron-3-super-120b-a12b:free",
+    },
   },
+  // Measured failure mode: nemotron answers in well under 2s or hangs
+  // outright. Capping at 25s turns a hang into a fast fall-through to
+  // degraded mode instead of eating the route's whole 60s budget.
+  maxTimeoutMs: Number(process.env.OPENROUTER_TIMEOUT_MS ?? 25_000),
   headers: {
     // OpenRouter attribution — identifies the app in their dashboard.
     "HTTP-Referer": process.env.OPENROUTER_SITE_URL ?? "https://mitaoe-pyqs.vercel.app",
