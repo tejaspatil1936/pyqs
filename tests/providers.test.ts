@@ -273,6 +273,11 @@ describe("registry counters", () => {
 
 describe("lane router", () => {
   it("falls to the next provider on a rate limit, and reports what it skipped", async () => {
+    const saved = {
+      groq: process.env.GROQ_API_KEY,
+      openrouter: process.env.OPENROUTER_API_KEY,
+      gemini: process.env.GEMINI_API_KEYS,
+    };
     vi.resetModules();
     process.env.GROQ_API_KEY = "k";
     process.env.OPENROUTER_API_KEY = "k";
@@ -307,5 +312,13 @@ describe("lane router", () => {
     expect(isBenched("groq")).toBe(true);
 
     delete process.env.SYNTHESIS_PROVIDERS;
+    for (const [k, v] of Object.entries({
+      GROQ_API_KEY: saved.groq,
+      OPENROUTER_API_KEY: saved.openrouter,
+      GEMINI_API_KEYS: saved.gemini,
+    })) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   });
 });
