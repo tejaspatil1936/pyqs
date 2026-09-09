@@ -45,6 +45,20 @@ export interface OpenAICompatConfig {
   reasoningEffort?: string;
 }
 
+/**
+ * OpenAI-compatible JSON mode rejects any request whose messages don't
+ * literally contain "json" ("'messages' must contain the word 'json' in some
+ * form"). Our classification prompt happens to say "JSON object", but relying
+ * on prompt wording to keep a provider alive is a trap: drop the word during
+ * an edit and the whole lane silently falls through to the scarcer provider.
+ * So the adapter guarantees it instead.
+ */
+function ensureJsonMentioned(prompt: string): string {
+  return /json/i.test(prompt)
+    ? prompt
+    : `${prompt}\n\nReply with a single JSON object and nothing else.`;
+}
+
 /** Free tiers phrase daily exhaustion differently; per-minute is the default. */
 const DAILY_LIMIT_RE = /per\s*-?\s*day|\bRPD\b|\bTPD\b|daily\s+(?:quota|limit)|free-models-per-day/i;
 
@@ -142,7 +156,9 @@ export function createOpenAICompatAdapter(config: OpenAICompatConfig): ProviderA
       for (let attempt = 0; attempt < 3; attempt++) {
         const payload: Record<string, unknown> = {
           model,
-          messages: [{ role: "user", content: prompt }],
+          messages: [
+            { role: "user", content: opts.json ? ensureJsonMentioned(prompt) : prompt },
+          ],
           temperature: 0,
           max_tokens: maxTokens,
         };
