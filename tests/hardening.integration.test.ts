@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { closePool } from "../src/lib/rag/db";
 
@@ -35,7 +35,16 @@ const ask = (body: unknown) =>
   );
 
 describe.skipIf(!hasDb)("quota-exhausted behavior (live DB, mocked Gemini)", () => {
+  // The response cache is SHARED via Neon, so "nobody has asked this yet" is
+  // no longer implied by a fresh process — an answer another test cached
+  // would be served before synthesis is ever attempted. This suite is about
+  // what happens when synthesis runs and fails, so it takes the cold path.
+  beforeAll(() => {
+    process.env.RESPONSE_CACHE_DISABLED = "1";
+  });
+
   afterAll(async () => {
+    delete process.env.RESPONSE_CACHE_DISABLED;
     delete process.env.RATE_LIMIT_SYNTH_PER_HOUR;
     await closePool();
   });

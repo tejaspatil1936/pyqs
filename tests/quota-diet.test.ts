@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { _resetCacheForTests } from "../src/lib/rag/cache";
 import { closePool } from "../src/lib/rag/db";
@@ -93,6 +93,13 @@ describe("regex-first classification", () => {
 });
 
 describe.skipIf(!hasDb)("quick actions make zero provider calls (live DB)", () => {
+  // Cache OFF on purpose. A cache hit makes "zero provider calls" true for
+  // the wrong reason, and would make the control case — which must prove an
+  // ambiguous question DOES reach a provider — silently vacuous. Every case
+  // here measures the uncached path.
+  beforeAll(() => {
+    process.env.RESPONSE_CACHE_DISABLED = "1";
+  });
   beforeEach(() => {
     _resetCacheForTests();
     installFetchSpy();
@@ -100,7 +107,10 @@ describe.skipIf(!hasDb)("quick actions make zero provider calls (live DB)", () =
   afterEach(() => {
     globalThis.fetch = realFetch;
   });
-  afterAll(() => closePool());
+  afterAll(async () => {
+    delete process.env.RESPONSE_CACHE_DISABLED;
+    await closePool();
+  });
 
   it.each(QUICK_ACTIONS)(
     "$intent button: answered from SQL, no provider contacted",
