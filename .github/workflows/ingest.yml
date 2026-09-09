@@ -68,5 +68,10 @@ jobs:
       - name: Label cluster topics
         run: python pipeline/label_topics.py
 
+      # Last: retire every deterministic answer the runtime cached against the
+      # pre-ingest corpus. Runs after labeling so the new counts are final.
+      - name: Bump corpus version (invalidates the shared response cache)
+        run: python pipeline/bump_corpus_version.py
+
       - name: Stats summary
         run: python pipeline/stats.py

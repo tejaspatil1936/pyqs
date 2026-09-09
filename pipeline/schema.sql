@@ -74,3 +74,41 @@ CREATE INDEX IF NOT EXISTS idx_clusters_subject_topic ON clusters (standard_subj
 -- ANN index for subject-filtered semantic search.
 CREATE INDEX IF NOT EXISTS idx_questions_embedding
     ON questions USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- ── Shared response cache ──────────────────────────────────────────────────
+-- The night before an exam, thousands of students ask the same handful of
+-- questions. Caching in Neon (not just per-instance memory) means the FIRST
+-- student pays for an answer and every other student on every other
+-- serverless instance reads it for free — the single biggest lever for
+-- serving 15K requests/day on free tiers.
+
+-- Monotonic counter bumped at the end of every ingest run. Deterministic
+-- (SQL-derived) cache entries are valid only while it matches: new papers
+-- change the counts, so those answers must not survive an ingest.
+CREATE TABLE IF NOT EXISTS corpus_version (
+    id         INTEGER PRIMARY KEY,
+    version    BIGINT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT corpus_version_singleton CHECK (id = 1)
+);
+INSERT INTO corpus_version (id, version) VALUES (1, 1) ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS response_cache (
+    cache_key           TEXT PRIMARY KEY,   -- sha256(subject, normalized_question, filters_hash)
+    subject             TEXT NOT NULL,
+    normalized_question TEXT NOT NULL,
+    filters_hash        TEXT NOT NULL,
+    intent              TEXT,
+    -- true  = answered from SQL; valid only at corpus_version below.
+    -- false = LLM-written; valid until expires_at.
+    deterministic       BOOLEAN NOT NULL,
+    corpus_version      BIGINT NOT NULL,
+    response            JSONB NOT NULL,
+    expires_at          TIMESTAMPTZ NOT NULL,
+    hits                INTEGER NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_response_cache_expires ON response_cache (expires_at);
+CREATE INDEX IF NOT EXISTS idx_response_cache_sweep
+    ON response_cache (deterministic, corpus_version);

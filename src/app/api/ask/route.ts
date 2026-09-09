@@ -44,7 +44,9 @@ import {
   classificationFromClient,
   classifyIntent,
   coerceClassification,
+  extractExamType,
   extractTopicShape,
+  extractYear,
   isExhaustiveQuery,
   isSkipQuery,
   resolveNumberedRef,
@@ -162,14 +164,20 @@ export async function POST(req: Request) {
   // history only matters to paths that resolve references against it.
   const cacheable = history.length === 0 || clientCls != null;
 
-  // Cache before any other work; multi-turn requests are context-dependent
-  // and skip it.
-  const key = cacheKey(subject, question);
+  // Cache before any other work — this check happens BEFORE any provider
+  // call, on both layers. Filters and the client-named intent are part of the
+  // key, and both come from deterministic extractors, so the key is known
+  // without classifying anything.
+  const key = cacheKey(subject, question, {
+    year: extractYear(question),
+    examType: extractExamType(question),
+    intent: clientCls?.intent ?? null,
+  });
   if (cacheable) {
-    const hit = cacheGet(key);
+    const hit = await cacheGet(key);
     if (hit) {
-      logAsk({ status: 200, intent: hit.intent, cache_hit: true });
-      return NextResponse.json({ ...hit, cached: true });
+      logAsk({ status: 200, intent: hit.body.intent, cache_hit: true, cache_layer: hit.layer });
+      return NextResponse.json({ ...hit.body, cached: true });
     }
   }
 
@@ -182,7 +190,7 @@ export async function POST(req: Request) {
   let synthProvider: string | null = null;
 
   // Successful history-free responses land in the cache on the way out.
-  const respond = (body: Record<string, unknown>, canCache = true) => {
+  const respond = async (body: Record<string, unknown>, canCache = true) => {
     const violations = checkResponseInvariants(body, {
       stats: statsForInvariants,
       filtersActive: filtersActiveForInvariants,
@@ -190,7 +198,10 @@ export async function POST(req: Request) {
     if (violations.length > 0) {
       logEvent({ evt: "invariant_violation", subject, intent: body.intent, violations });
     }
-    if (cacheable && canCache) cacheSet(key, body);
+    // Awaited, not fire-and-forget: a serverless instance can be frozen the
+    // moment the response is returned, and a dropped write means the next
+    // student pays for this answer all over again.
+    if (cacheable && canCache) await cacheSet(key, body);
     logAsk({
       status: 200,
       intent: body.intent,
