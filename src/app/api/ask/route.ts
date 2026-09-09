@@ -22,6 +22,7 @@ import {
   normalizeCitations,
   stripContradictoryPreamble,
   stripInternalNames,
+  type SynthResult,
   synthesizeAnswer,
   synthesizeStudyGuide,
   synthesizeWithQuality,
@@ -165,6 +166,9 @@ export async function POST(req: Request) {
   // deterministic-path hits are bugs to fix at the source.
   let statsForInvariants: import("@/lib/rag/subject-stats").SubjectStats | null = null;
   let filtersActiveForInvariants = false;
+  // Which lane provider wrote the prose, when any did — logged so a quality
+  // regression can be traced to the provider that produced it.
+  let synthProvider: string | null = null;
 
   // Successful history-free responses land in the cache on the way out.
   const respond = (body: Record<string, unknown>, cacheable = true) => {
@@ -183,6 +187,7 @@ export async function POST(req: Request) {
       cache_hit: false,
       no_answer: body.no_answer === true,
       degraded: body.degraded === true,
+      ...(synthProvider ? { provider: synthProvider } : {}),
     });
     return NextResponse.json(body);
   };
@@ -439,7 +444,7 @@ export async function POST(req: Request) {
           { status: 429 },
         );
       }
-      let plan: string;
+      let plan: SynthResult;
       try {
         plan = await synthesizeWithQuality(
           (fix) => synthesizeStudyGuide(subject, question, topics, total, topN, history, tail, fix),
@@ -465,7 +470,8 @@ export async function POST(req: Request) {
         }
         throw err;
       }
-      const guardedPlan = guardOutput(plan, subject, question);
+      synthProvider = plan.provider;
+      const guardedPlan = guardOutput(plan.text, subject, question);
       if (guardedPlan.flagged) {
         return respond({ intent: "REFUSED", answer: guardedPlan.answer });
       }
@@ -489,7 +495,7 @@ export async function POST(req: Request) {
               tail,
               `Your previous draft violated the skip contract: ${violation}. Rewrite it obeying every rule.`,
             );
-            planAnswer = stripInternalNames(guardOutput(redo, subject, question).answer);
+            planAnswer = stripInternalNames(guardOutput(redo.text, subject, question).answer);
             violation = skipContractViolation(planAnswer, protectedTopics);
           } catch {
             // fall through to the deterministic answer
@@ -705,7 +711,7 @@ export async function POST(req: Request) {
       );
     }
 
-    let raw: string;
+    let raw: SynthResult;
     try {
       raw = await synthesizeWithQuality(
         (fix) => synthesizeAnswer(subject, question, grounded, history, fix),
@@ -728,7 +734,8 @@ export async function POST(req: Request) {
       }
       throw err;
     }
-    const guarded = guardOutput(raw, subject, question);
+    synthProvider = raw.provider;
+    const guarded = guardOutput(raw.text, subject, question);
     if (guarded.flagged) {
       return respond({ intent: "REFUSED", answer: guarded.answer });
     }

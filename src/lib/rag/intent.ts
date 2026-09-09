@@ -1,4 +1,5 @@
-import { generateText, GeminiUnavailable } from "./gemini";
+import { logEvent } from "./obs";
+import { generateForLane, ProviderModelDead, ProvidersUnavailable } from "./providers";
 import { prefilterAbuse } from "./scope";
 
 export type Intent =
@@ -27,6 +28,12 @@ export interface Classification {
   year: string | null;
   /** Explicit exam-type filter (ESE/MSE/CAT), else null. */
   examType: string | null;
+  /**
+   * The heuristic matched a NAMED rule rather than falling through to its
+   * SEMANTIC catch-all. Only confident deterministic verdicts may skip the
+   * LLM classification lane — see shouldClassifyWithLlm().
+   */
+  confident?: boolean;
 }
 
 export interface HistoryTurn {
@@ -271,41 +278,92 @@ export function classifyHeuristic(question: string): Classification {
     ? null
     : (TOPIC_PATTERN.exec(q) ?? TOPIC_PATTERN_PASSIVE.exec(q));
   if (SKIP_RE.test(q) || STUDY_GUIDE_RE.test(q)) {
-    return { ...base, intent: "STUDY_GUIDE", topic: null };
+    return { ...base, intent: "STUDY_GUIDE", topic: null, confident: true };
   }
   // Subject-wide trend asks outrank weightage ("which topics are trending"),
   // but a named topic keeps trend queries topic-scoped.
   if (!topicMatch && YEAR_TREND_RE.test(q)) {
-    return { ...base, intent: "YEAR_TREND", topic: null };
+    return { ...base, intent: "YEAR_TREND", topic: null, confident: true };
   }
-  if (WEIGHTAGE_RE.test(q)) return { ...base, intent: "TOPIC_WEIGHTAGE", topic: null };
+  if (WEIGHTAGE_RE.test(q)) {
+    return { ...base, intent: "TOPIC_WEIGHTAGE", topic: null, confident: true };
+  }
   if (topicMatch) {
-    return { ...base, intent: "TOPIC_ANALYTICS", topic: topicMatch[1].trim() };
+    return { ...base, intent: "TOPIC_ANALYTICS", topic: topicMatch[1].trim(), confident: true };
   }
   // Checked after topic extraction, and also rescues frequency questions
   // that start explain-like ("What are the most frequently asked questions?").
-  if (FREQUENCY.test(q)) return { ...base, intent: "ANALYTICS", topic: null };
+  if (FREQUENCY.test(q)) return { ...base, intent: "ANALYTICS", topic: null, confident: true };
   // A year/exam-type filter next to paper-ish words is a frequency ask even
   // without a frequency keyword: "questions that came in 2024".
   if ((year || examType) && /\bquestions?\b|\bpapers?\b|\basked\b|\bcame\b/i.test(q)) {
-    return { ...base, intent: "ANALYTICS", topic: null };
+    return { ...base, intent: "ANALYTICS", topic: null, confident: true };
   }
-  return { ...base, intent: "SEMANTIC", topic: null };
+  // Catch-all: nothing matched, so this is genuinely ambiguous.
+  return { ...base, intent: "SEMANTIC", topic: null, confident: false };
 }
 
 /**
- * One cheap Gemini call returning scope + intent + topic + rewrite together
- * (per the spec: one call, not two); falls back to the heuristic on failure.
+ * Intents answered entirely from SQL + deterministic formatting. No user text
+ * ever reaches a model on these paths, which is why a confident regex verdict
+ * is allowed to skip the classification lane outright.
+ */
+const DETERMINISTIC_INTENTS = new Set<Intent>([
+  "ANALYTICS",
+  "TOPIC_ANALYTICS",
+  "TOPIC_WEIGHTAGE",
+  "YEAR_TREND",
+]);
+
+/**
+ * QUOTA DIET, rule 2: classification is regex-FIRST. The LLM lane only ever
+ * sees genuinely ambiguous queries.
+ *
+ * An LLM call is spent only when it buys something the regexes cannot:
+ *   - history present -> the standalone rewrite that resolves "the second one"
+ *   - no rule matched -> the heuristic's SEMANTIC catch-all is a shrug, not a
+ *     verdict
+ *   - the verdict is synthesis-bound (STUDY_GUIDE/SEMANTIC) -> the query text
+ *     is about to reach a model, so it gets the LLM scope gate first
+ *
+ * Everything else — "most repeated questions", "topic-wise weightage",
+ * "what gets asked about hashing" — is answered from SQL, so a matched regex
+ * IS the answer and an LLM call would buy nothing.
+ */
+export function shouldClassifyWithLlm(
+  heuristic: Classification,
+  history: HistoryTurn[],
+): boolean {
+  if (history.length > 0) return true;
+  if (!heuristic.confident) return true;
+  if (heuristic.solving) return true;
+  return !DETERMINISTIC_INTENTS.has(heuristic.intent);
+}
+
+/**
+ * Scope + intent + topic + rewrite in ONE classification-lane call — but only
+ * for queries the regexes can't settle (see shouldClassifyWithLlm). Falls back
+ * to the heuristic whenever the lane is exhausted; a DEAD MODEL propagates,
+ * because that is a deploy bug, not a quota event.
  */
 export async function classifyIntent(
   question: string,
   opts: { subject: string; history?: HistoryTurn[] },
 ): Promise<Classification> {
+  const history = opts.history ?? [];
+  const heuristic = classifyHeuristic(question);
+  if (!shouldClassifyWithLlm(heuristic, history)) {
+    logEvent({ evt: "classify", path: "regex", intent: heuristic.intent, llm_calls: 0 });
+    return heuristic;
+  }
+
   try {
-    const raw = await generateText(classifyPrompt(opts.subject, question, opts.history ?? []), {
-      json: true,
-      timeoutMs: 15_000,
-    });
+    const { text: raw, provider } = await generateForLane(
+      "classification",
+      classifyPrompt(opts.subject, question, history),
+      { json: true, timeoutMs: 15_000, maxTokens: 800 },
+    );
+    logEvent({ evt: "classify", path: "llm", provider, llm_calls: 1 });
     const parsed = JSON.parse(raw) as {
       in_scope?: unknown;
       intent?: unknown;
@@ -359,7 +417,13 @@ export async function classifyIntent(
       return { inScope: true, intent, topic: topic || question, ...shared };
     }
   } catch (err) {
-    if (!(err instanceof GeminiUnavailable)) console.error("intent classification failed:", err);
+    // A misconfigured model must never be papered over by the regex fallback.
+    if (err instanceof ProviderModelDead) throw err;
+    if (!(err instanceof ProvidersUnavailable)) {
+      console.error("intent classification failed:", err);
+    }
   }
-  return classifyHeuristic(question);
+  // Lane exhausted or unparseable reply: the regexes still route the query.
+  logEvent({ evt: "classify", path: "regex_fallback", intent: heuristic.intent, llm_calls: 0 });
+  return heuristic;
 }

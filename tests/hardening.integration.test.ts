@@ -2,16 +2,21 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { closePool } from "../src/lib/rag/db";
 
-// Simulate the runtime key's daily quota being exhausted: every Gemini call
-// throws GeminiUnavailable. Classification then falls back to the regex
-// heuristic and synthesis must degrade gracefully — the site never goes
-// dark because of quota.
-vi.mock("../lib/gemini", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../lib/gemini")>();
+// Simulate EVERY provider in both lanes being out of quota. The lane router
+// is the single choke point for all LLM traffic, so failing it here covers
+// Gemini, Groq and OpenRouter at once: classification falls back to the regex
+// heuristic and synthesis degrades gracefully — the site never goes dark
+// because of quota.
+//
+// (Mocking the router, not one provider, is also why this now actually
+// bites: the previous mock pointed at a path that did not exist, so the real
+// client was used and the degrade path was never exercised.)
+vi.mock("../src/lib/rag/providers", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../src/lib/rag/providers")>();
   return {
     ...mod,
-    generateText: vi.fn(async () => {
-      throw new mod.GeminiUnavailable("daily quota exhausted (mocked)");
+    generateForLane: vi.fn(async () => {
+      throw new mod.ProvidersUnavailable("every provider is exhausted (mocked)");
     }),
   };
 });
