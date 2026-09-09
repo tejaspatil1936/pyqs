@@ -12,13 +12,20 @@
  */
 
 import { AllKeysBenched, acquireKey, benchKey, benchKeyForDay } from "./key-rotator";
+import { recordCall } from "./providers/registry";
+import { ProviderModelDead, ProvidersUnavailable } from "./providers/types";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
 
-/** Gemini is rate-limited or down — callers should surface HTTP 503. */
-export class GeminiUnavailable extends Error {}
+/**
+ * Gemini is rate-limited or down — callers degrade. Now an alias of the
+ * lane-wide ProvidersUnavailable so existing `instanceof` checks keep
+ * working after the multi-provider split (a lane that exhausts EVERY
+ * provider is exactly the condition this used to mean).
+ */
+export { ProvidersUnavailable as GeminiUnavailable } from "./providers/types";
 
 // Sticky per-instance: once the model rejects thinkingConfig we stop sending it.
 let sendThinkingConfig = true;
@@ -38,8 +45,42 @@ function parse429(body: string): { daily: boolean; retryMs: number } {
 }
 
 // Key indexes only — never values (same contract as the pipeline).
+// Also feeds the per-provider daily counters behind /api/health.
 function logKey(index: number, outcome: string): void {
   console.log(JSON.stringify({ evt: "gemini_call", key_index: index, outcome }));
+  recordCall("gemini", outcome);
+}
+
+/**
+ * Model reachability check for the provider preflight: a metadata GET, so it
+ * costs no generation quota. A 404 means the configured GEMINI_MODEL is
+ * retired or misspelled — a deploy bug, surfaced as ProviderModelDead.
+ */
+export async function geminiPreflight(): Promise<void> {
+  let key: string;
+  try {
+    ({ key } = acquireKey());
+  } catch (err) {
+    if (err instanceof AllKeysBenched) {
+      throw new ProvidersUnavailable("all Gemini keys are rate-limited or out of quota");
+    }
+    throw new ProviderModelDead("gemini", GEMINI_MODEL, "GEMINI_API_KEYS is not set");
+  }
+  const resp = await fetch(`${API_BASE}/${GEMINI_MODEL}?key=${key}`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (resp.status === 404) {
+    throw new ProviderModelDead("gemini", GEMINI_MODEL, "model not found (HTTP 404)");
+  }
+  if (resp.status === 400 || resp.status === 401 || resp.status === 403) {
+    throw new ProviderModelDead(
+      "gemini",
+      GEMINI_MODEL,
+      `key rejected (HTTP ${resp.status}) — check GEMINI_API_KEYS`,
+    );
+  }
+  // Anything else (5xx, network) is transient; the caller retries the check.
+  if (!resp.ok) throw new Error(`Gemini preflight HTTP ${resp.status}`);
 }
 
 export async function generateText(
@@ -57,7 +98,7 @@ export async function generateText(
       ({ key, index } = acquireKey());
     } catch (err) {
       if (err instanceof AllKeysBenched) {
-        throw new GeminiUnavailable("all Gemini keys are rate-limited or out of quota");
+        throw new ProvidersUnavailable("all Gemini keys are rate-limited or out of quota");
       }
       throw err;
     }
@@ -82,7 +123,7 @@ export async function generateText(
       // callers fall back to retrieval/analytics instead of a 500. Not a
       // key problem, so no bench.
       logKey(index, "network_error");
-      throw new GeminiUnavailable(
+      throw new ProvidersUnavailable(
         `Gemini unreachable (${err instanceof Error ? err.name : "network error"}) — try again shortly`,
       );
     }
@@ -130,5 +171,5 @@ export async function generateText(
     throw new Error(`Gemini HTTP ${resp.status}: ${errText.slice(0, 300)}`);
   }
 
-  throw new GeminiUnavailable("Gemini request did not succeed after rotating keys");
+  throw new ProvidersUnavailable("Gemini request did not succeed after rotating keys");
 }
