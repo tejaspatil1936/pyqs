@@ -57,7 +57,11 @@ question papers. Two query types:
    similarity (agglomerative, cosine threshold ~0.80 to start; make it a
    config constant). Store cluster_id on questions, and a `clusters` table
    with representative_text and count.
-6. Workflow is idempotent and resumable: progress lives in the DB, so re-runs
+6. Corpus-version step (LAST, after labeling): bump the `corpus_version`
+   row and sweep the rows it retires. Every deterministic answer the runtime
+   cached ("asked in 30 of 49 exams") was computed against the pre-ingest
+   corpus, so the bump retires all of them at once.
+7. Workflow is idempotent and resumable: progress lives in the DB, so re-runs
    only touch pending work. Schedule: cron every 4 hours until backlog is
    empty; then monthly for new papers.
 
@@ -68,28 +72,87 @@ question papers. Two query types:
   embedding vector(384), cluster_id, created_at)
 - clusters(id, standard_subject, representative_text, question_count,
   papers_count, years_spanned)
+- corpus_version(id=1, version, updated_at) — single row, bumped at the end
+  of every ingest run; the freshness signal for cached deterministic answers.
+- response_cache(cache_key PK, subject, normalized_question, filters_hash,
+  intent, deterministic, corpus_version, response JSONB, expires_at, hits)
+  — the SHARED cache behind /api/ask (see Providers below).
 - Indexes: questions(cluster_id), papers(standard_subject, status),
-  ivfflat index on embedding.
+  ivfflat index on embedding, response_cache(expires_at),
+  response_cache(deterministic, corpus_version).
 
 ## Backend (Next.js API routes, deployed on Vercel)
-- POST /api/ask { subject, question }
-  1. Classify query intent with one cheap Gemini call: ANALYTICS or SEMANTIC.
+- POST /api/ask { subject, question, history?, intent?, topic? }
+  0. Cache check FIRST, before any provider call (see Providers below).
+  1. Classify intent — regex-FIRST. A request carrying its own `intent`
+     (quick-action buttons) skips classification entirely, and a query the
+     regexes settle confidently onto a SQL-only intent costs no LLM call
+     either. Only genuinely ambiguous or synthesis-bound queries reach the
+     classification lane.
   2. ANALYTICS → SQL over clusters filtered by subject → format ranked list
      with counts and source paper links. LLM only formats, never invents.
-  3. SEMANTIC → embed the query (use Gemini embedding OR precomputed via a
-     tiny serverless-friendly approach; if sentence-transformers won't run on
-     Vercel, use Gemini's free embedding endpoint for QUERY-TIME only) →
-     pgvector search WHERE standard_subject = $1 → top 10 questions with
-     paper metadata → Gemini Flash writes the answer citing papers.
+  3. SEMANTIC → embed the query (sentence-transformers can't run on Vercel,
+     so the same MiniLM weights run as quantized ONNX via transformers.js at
+     QUERY TIME only) → pgvector search WHERE standard_subject = $1 → top 10
+     questions with paper metadata → the synthesis lane writes the answer
+     citing papers.
 - GET /api/subjects → distinct standard_subject list with question counts.
+- GET /api/health → DB reachability, per-lane provider availability with
+  today's call counts, and the cache hit rate.
 
 ## Frontend (Next.js + Tailwind, same repo)
 - Landing page: subject picker (searchable dropdown) → chat interface.
 - Chat shows answers with expandable citations (paper name, year, exam type,
   link to original PDF on the worker URL).
 - Prebuilt quick-action buttons: "Most repeated questions", "Topic-wise
-  weightage", "Year-wise trend".
+  weightage", "Year-wise trend". Each sends its INTENT with the request, so
+  the whole round trip costs zero LLM calls.
 - Simple, fast, mobile-first. No login.
+
+## Providers (runtime LLM lanes) + shared cache
+Serving ~15K requests/day on free tiers is a quota problem before it is a
+model problem. Three mechanisms, in the order a request meets them:
+
+1. QUOTA DIET — the cheapest call is the one never made.
+   - Quick-action buttons carry an explicit intent; the server takes it and
+     skips classification. Only SQL-only intents are accepted from a client
+     (ANALYTICS, TOPIC_ANALYTICS, TOPIC_WEIGHTAGE, YEAR_TREND), so a client
+     can never name its way past the scope gate into a synthesis path.
+   - Classification is regex/coerce-FIRST. The LLM classification lane is
+     spent only when it buys something the regexes cannot: history to
+     resolve a follow-up against, a query no rule matched, or a verdict
+     that is synthesis-bound and therefore needs the LLM scope gate.
+
+2. SHARED CACHE (Neon `response_cache`), checked BEFORE any provider call.
+   Keyed on (subject, normalized_question, filters_hash). L1 is per-instance
+   memory; L2 is Neon, so the first student to ask pays and every other
+   instance reads it back free. Deterministic entries (analytics/weightage/
+   trends) are valid only at the current `corpus_version` — a count is
+   either currently true or wrong, which no TTL can express. LLM-written
+   entries ride a long TTL (CACHE_TTL_SEMANTIC_DAYS, default 7). Cache
+   failures degrade to "miss" and log: a broken cache costs quota, never
+   answers.
+
+3. TWO CALL-TYPE LANES, each an env-configurable provider ladder. Groq and
+   OpenRouter are OpenAI-compatible and share ONE adapter.
+   - classification: Groq -> Gemini -> regex-only. High volume, tiny JSON
+     replies, wants the biggest requests-per-day ceiling.
+   - synthesis: Gemini -> Groq -> OpenRouter -> degraded mode. The prose the
+     student reads, so it leads with the best writer.
+   Rules that hold across all of them:
+   - Preflight on first use, via the provider's model catalogue, so a dead
+     model costs no generation quota to discover. Verdict is sticky.
+   - Same 429 handling everywhere: per-minute limits are a short cooldown
+     (honoring Retry-After), daily limits bench the provider until the next
+     UTC day. Gemini additionally rotates its N keys underneath.
+   - A DEAD MODEL (404, or a rejected key) ABORTS THE LANE LOUDLY. It is a
+     deploy bug, not a quota event, and must never masquerade as exhausted
+     quota — the one failure mode that is never degraded silently.
+   - Quality is a property of the ANSWER, not of a provider: the grounding,
+     skip-safety, verdict-first, banned-phrase and citation-format contracts
+     run against Groq and OpenRouter output too (tests/provider-contract).
+   - OpenRouter's free tier is 50 model requests/DAY. It is a thin last
+     resort, not a workhorse.
 
 ## Response invariants (enforced, all subjects)
 - Scope fidelity: deliver what was asked at the asked scope; any
@@ -136,7 +199,17 @@ reject/retry, then degrade honestly.
   the pipeline rotates over the same set — it runs briefly on a schedule,
   so collisions are acceptable. The code must read this dynamically — never
   hardcode a key count anywhere; a single-key deployment must work.)
-- Backend /api/ask degrades gracefully only when every key is benched.
+- GROQ_API_KEY, OPENROUTER_API_KEY (one key each, both optional). With only
+  GEMINI_API_KEYS set the app behaves exactly as it did before the lanes
+  existed.
+- Lane order: CLASSIFICATION_PROVIDERS, SYNTHESIS_PROVIDERS (comma-separated
+  provider names). Models: GROQ_CLASSIFICATION_MODEL, GROQ_SYNTHESIS_MODEL,
+  OPENROUTER_CLASSIFICATION_MODEL, OPENROUTER_SYNTHESIS_MODEL,
+  OPENROUTER_TIMEOUT_MS. Free catalogues change; a model id must be fixable
+  with an env var, never a redeploy, and NEVER hardcoded outside its default.
+- CACHE_TTL_SEMANTIC_DAYS (default 7) for LLM-written cache entries.
+- Backend /api/ask degrades gracefully only when every provider in the lane
+  is exhausted — and never for a dead model, which aborts loudly instead.
 
 ## Open source
 This repo is public/open source. Therefore:
@@ -146,3 +219,4 @@ This repo is public/open source. Therefore:
   with your own free keys) and an MIT license.
 - Contributors run the same pipeline with their own GEMINI_API_KEYS — nothing
   in the code may assume a specific number of keys (1..N must all work).
+  
