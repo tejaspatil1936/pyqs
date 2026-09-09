@@ -41,6 +41,7 @@ import { GeminiUnavailable } from "@/lib/rag/gemini";
 import {
   NUMBERED_REF,
   UNRESOLVED_REF,
+  classificationFromClient,
   classifyIntent,
   coerceClassification,
   extractTopicShape,
@@ -113,11 +114,16 @@ export async function POST(req: Request) {
     subject: rawSubject,
     question: rawQuestion,
     history: rawHistory,
+    // Quick-action buttons carry their own intent (and topic, for a topic
+    // chip) so the request costs zero LLM calls — see classificationFromClient.
+    intent: rawIntent,
+    topic: rawTopic,
   } = (body ?? {}) as Record<string, unknown>;
   const subject = String(rawSubject ?? "").trim();
   // "imp ques" → "important questions" etc. before anything reads the query.
   const question = normalizeQuery(String(rawQuestion ?? ""));
   const history = sanitizeHistory(rawHistory);
+  const clientCls = classificationFromClient(rawIntent, rawTopic, question);
   if (!subject || !question) {
     return NextResponse.json({ error: "subject and question are required" }, { status: 400 });
   }
@@ -151,10 +157,15 @@ export async function POST(req: Request) {
     );
   }
 
+  // A button-originated request is fully determined by subject + question +
+  // filters + the named intent, so it stays cacheable even mid-conversation:
+  // history only matters to paths that resolve references against it.
+  const cacheable = history.length === 0 || clientCls != null;
+
   // Cache before any other work; multi-turn requests are context-dependent
   // and skip it.
   const key = cacheKey(subject, question);
-  if (history.length === 0) {
+  if (cacheable) {
     const hit = cacheGet(key);
     if (hit) {
       logAsk({ status: 200, intent: hit.intent, cache_hit: true });
@@ -171,7 +182,7 @@ export async function POST(req: Request) {
   let synthProvider: string | null = null;
 
   // Successful history-free responses land in the cache on the way out.
-  const respond = (body: Record<string, unknown>, cacheable = true) => {
+  const respond = (body: Record<string, unknown>, canCache = true) => {
     const violations = checkResponseInvariants(body, {
       stats: statsForInvariants,
       filtersActive: filtersActiveForInvariants,
@@ -179,7 +190,7 @@ export async function POST(req: Request) {
     if (violations.length > 0) {
       logEvent({ evt: "invariant_violation", subject, intent: body.intent, violations });
     }
-    if (cacheable && history.length === 0) cacheSet(key, body);
+    if (cacheable && canCache) cacheSet(key, body);
     logAsk({
       status: 200,
       intent: body.intent,
@@ -188,6 +199,7 @@ export async function POST(req: Request) {
       no_answer: body.no_answer === true,
       degraded: body.degraded === true,
       ...(synthProvider ? { provider: synthProvider } : {}),
+      ...(clientCls ? { explicit_intent: clientCls.intent } : {}),
     });
     return NextResponse.json(body);
   };
@@ -227,8 +239,10 @@ export async function POST(req: Request) {
     }
 
     // Scope gate layer 1 rides along in the intent-classification call; the
-    // history lets it resolve follow-ups like "explain the second one".
-    let rawCls = await classifyIntent(question, { subject, history });
+    // history lets it resolve follow-ups like "explain the second one". A
+    // client-named intent skips the call altogether — the greeting and abuse
+    // gates above already ran, and every allowed intent is SQL-only.
+    let rawCls = clientCls ?? (await classifyIntent(question, { subject, history }));
     if (!rawCls.inScope) {
       // Honest-zero contract: an archive-referential ask about an unknown
       // term ("what gets asked about flurbification") answers with "0 of N
@@ -243,8 +257,11 @@ export async function POST(req: Request) {
     }
     // Deterministic fixes for known classifier drift (skip -> study guide,
     // filter-only -> analytics, count-phrased topic -> topic analytics).
+    // Skipped for a client-named intent: the button is authoritative, and a
+    // coercion could otherwise divert it onto a synthesis path and spend the
+    // LLM call the explicit intent exists to avoid.
     const { intent, topic, rewritten, topN, solving, predictive, year, examType } =
-      coerceClassification(rawCls, question);
+      clientCls ?? coerceClassification(rawCls, question);
     const filters = { year, examType };
     const note = filterLabel(filters);
     filtersActiveForInvariants = note != null;

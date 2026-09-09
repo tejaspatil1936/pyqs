@@ -10,11 +10,21 @@ type Msg =
   | { id: number; role: "assistant"; res: AskResponse }
   | { id: number; role: "error"; text: string; retryQuestion: string };
 
+// Each button carries its intent, so the server skips classification and the
+// request costs ZERO LLM calls — all three land on SQL-only paths.
 const QUICK_ACTIONS = [
-  { label: "Most repeated questions", question: "What are the most repeated questions?" },
-  { label: "Topic-wise weightage", question: "Show me the topic-wise weightage" },
-  { label: "Year-wise trend", question: "Show me the year-wise trends" },
-];
+  {
+    label: "Most repeated questions",
+    question: "What are the most repeated questions?",
+    intent: "ANALYTICS",
+  },
+  {
+    label: "Topic-wise weightage",
+    question: "Show me the topic-wise weightage",
+    intent: "TOPIC_WEIGHTAGE",
+  },
+  { label: "Year-wise trend", question: "Show me the year-wise trends", intent: "YEAR_TREND" },
+] as const;
 
 export default function Chat({
   subject,
@@ -38,7 +48,7 @@ export default function Chat({
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, loading]);
 
-  async function send(question: string) {
+  async function send(question: string, intent?: string) {
     const q = question.trim();
     if (!q || loading) return;
     setInput("");
@@ -59,7 +69,7 @@ export default function Chat({
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, question: q, history }),
+        body: JSON.stringify({ subject, question: q, history, ...(intent ? { intent } : {}) }),
       });
       const body = (await res.json()) as AskResponse & { error?: string };
       if (!res.ok) {
@@ -192,7 +202,7 @@ export default function Chat({
                 key={qa.label}
                 type="button"
                 disabled={loading}
-                onClick={() => send(qa.question)}
+                onClick={() => send(qa.question, qa.intent)}
                 className="min-h-11 shrink-0 rounded-full border border-brand/40 bg-brand/10 px-3.5 text-xs font-medium text-brand hover:bg-brand/20 disabled:opacity-50"
               >
                 {qa.label}

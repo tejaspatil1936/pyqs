@@ -37,6 +37,11 @@ export function cacheGet(key: string): Record<string, unknown> | null {
   return entry.body;
 }
 
+/** Test-only: drop every cached entry so a test starts from a cold cache. */
+export function _resetCacheForTests(): void {
+  globalForCache.pyqAskCache = new Map();
+}
+
 export function cacheSet(key: string, body: Record<string, unknown>): void {
   const s = store();
   if (s.size >= MAX_ENTRIES) {

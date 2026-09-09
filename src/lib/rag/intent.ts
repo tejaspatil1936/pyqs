@@ -304,6 +304,57 @@ export function classifyHeuristic(question: string): Classification {
 }
 
 /**
+ * Intents a CLIENT may name explicitly (the quick-action buttons).
+ *
+ * Deliberately limited to the deterministic, SQL-only paths: none of them
+ * sends user text to a model, so letting the client pick one cannot be used
+ * to skip the LLM scope gate into a synthesis path. A button that means
+ * exactly one thing should not pay for a classifier to rediscover it.
+ */
+const CLIENT_INTENTS = new Set<string>([
+  "ANALYTICS",
+  "TOPIC_ANALYTICS",
+  "TOPIC_WEIGHTAGE",
+  "YEAR_TREND",
+]);
+
+/** A client-supplied topic is echoed into prose — keep it short. */
+const MAX_CLIENT_TOPIC_LEN = 200;
+
+/**
+ * QUOTA DIET, rule 1: a request that carries its own intent makes ZERO LLM
+ * calls. Filters still come from the deterministic extractors, so an explicit
+ * intent narrows exactly like a typed one would.
+ *
+ * Returns null when the client named something not on the allowlist — the
+ * request then falls through to normal classification rather than being
+ * rejected, so a stale client can never break the API.
+ */
+export function classificationFromClient(
+  rawIntent: unknown,
+  rawTopic: unknown,
+  question: string,
+): Classification | null {
+  const intent = String(rawIntent ?? "").trim().toUpperCase();
+  if (!CLIENT_INTENTS.has(intent)) return null;
+  const topic = String(rawTopic ?? "").trim().slice(0, MAX_CLIENT_TOPIC_LEN) || null;
+  // A topic ranking with no topic has nothing to rank.
+  if (intent === "TOPIC_ANALYTICS" && !topic) return null;
+  return {
+    inScope: true,
+    intent: intent as Intent,
+    topic,
+    rewritten: null,
+    topN: extractTopN(question),
+    solving: false,
+    predictive: false,
+    year: extractYear(question),
+    examType: extractExamType(question),
+    confident: true,
+  };
+}
+
+/**
  * Intents answered entirely from SQL + deterministic formatting. No user text
  * ever reaches a model on these paths, which is why a confident regex verdict
  * is allowed to skip the classification lane outright.
