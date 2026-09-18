@@ -13,7 +13,7 @@
 
 import { AllKeysBenched, acquireKey, benchKey, benchKeyForDay } from "./key-rotator";
 import { recordCall } from "./providers/registry";
-import { ProviderModelDead, ProvidersUnavailable } from "./providers/types";
+import { ProviderModelDead, ProviderTransient, ProvidersUnavailable } from "./providers/types";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -34,6 +34,17 @@ interface GenerateOptions {
   json?: boolean;
   timeoutMs?: number;
 }
+
+interface GenerateContentResponse {
+  candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+  promptFeedback?: { blockReason?: string };
+}
+
+/**
+ * finishReasons that mean a safety/policy filter cut the answer. Whatever text
+ * came back is a fragment at best, never an answer to serve.
+ */
+const BLOCKED_FINISH = new Set(["SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"]);
 
 /** Pipeline-style 429 anatomy: daily-quota vs per-minute, with retryDelay. */
 function parse429(body: string): { daily: boolean; retryMs: number } {
@@ -129,18 +140,53 @@ export async function generateText(
     }
 
     if (resp.ok) {
-      const body = (await resp.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
-      };
-      const text = (body.candidates?.[0]?.content?.parts ?? [])
-        .map((p) => p.text ?? "")
-        .join("");
-      if (!text) throw new Error("Gemini returned an empty candidate");
+      // Everything below throws ProviderTransient, never a raw Error: the
+      // router benches Gemini briefly and hands the request to the next
+      // provider, where a raw Error escapes the router and /api/ask 500s
+      // (the same contract the OpenAI-compatible adapter keeps).
+      //
+      // Reading the body can abort on the timeout signal too — a slow stream
+      // still arriving past the deadline throws here, not at fetch().
+      let body: GenerateContentResponse;
+      try {
+        body = (await resp.json()) as GenerateContentResponse;
+      } catch (err) {
+        logKey(index, "body_read_error");
+        throw new ProviderTransient(
+          `Gemini response unreadable (${err instanceof Error ? err.name : "stream error"})`,
+          "gemini",
+        );
+      }
+      const candidate = body.candidates?.[0];
+      const text = (candidate?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+      const finish = candidate?.finishReason;
+      const blockReason =
+        body.promptFeedback?.blockReason ?? (finish && BLOCKED_FINISH.has(finish) ? finish : null);
+      if (blockReason) {
+        logKey(index, `blocked_${blockReason.toLowerCase()}`);
+        throw new ProviderTransient(`Gemini blocked the response (${blockReason})`, "gemini");
+      }
+      if (!text.trim()) {
+        logKey(index, "empty");
+        throw new ProviderTransient("Gemini returned an empty candidate", "gemini");
+      }
+      // Stopped mid-sentence: half an answer is worse than letting a provider
+      // that can finish it take the request.
+      if (finish === "MAX_TOKENS") {
+        logKey(index, "truncated");
+        throw new ProviderTransient("Gemini truncated its answer at the token cap", "gemini");
+      }
       logKey(index, "ok");
       return text;
     }
 
-    const errText = await resp.text();
+    // Same hazard on the error path: never let a body read escape raw.
+    let errText: string;
+    try {
+      errText = await resp.text();
+    } catch {
+      errText = "";
+    }
 
     if (resp.status === 400 && sendThinkingConfig && errText.toLowerCase().includes("thinking")) {
       sendThinkingConfig = false; // model doesn't take thinkingConfig; drop it for this instance
