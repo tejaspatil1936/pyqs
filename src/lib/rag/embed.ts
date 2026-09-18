@@ -36,8 +36,22 @@ const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
 
 let extractorPromise: Promise<FeatureExtractionPipeline> | null = null;
 
+/**
+ * One in-flight load is shared by every concurrent caller, and a successful
+ * load is kept for the life of the instance. A FAILED load is not: memoizing
+ * the rejection would turn one bad cold start (a network blip mid-download, a
+ * half-written cache file) into a 500 on every semantic query until the
+ * instance is recycled. transformers.js deletes a partial download when it
+ * errors, so the next call re-fetches cleanly.
+ */
 function getExtractor(): Promise<FeatureExtractionPipeline> {
-  extractorPromise ??= pipeline("feature-extraction", MODEL_ID, { dtype: "q8" });
+  if (!extractorPromise) {
+    const attempt = pipeline("feature-extraction", MODEL_ID, { dtype: "q8" });
+    extractorPromise = attempt;
+    attempt.catch(() => {
+      if (extractorPromise === attempt) extractorPromise = null;
+    });
+  }
   return extractorPromise;
 }
 
