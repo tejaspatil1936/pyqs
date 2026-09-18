@@ -1,8 +1,13 @@
 import { config } from "dotenv";
 
+import { installLiveDbGuard } from "./live-db-guard";
+
 // .env.local wins (Next.js convention), then .env; CI injects secrets directly.
 config({ path: ".env.local" });
 config();
+
+// Tests share the production database: refuse any write to corpus_version.
+installLiveDbGuard();
 
 // In CI a missing secret must fail loudly, never silently skip everything.
 if (process.env.CI && !process.env.DATABASE_URL) {
