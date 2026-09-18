@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  _pinCorpusVersionForTests,
   _resetCacheForTests,
   cacheGet,
   cacheKey,
@@ -11,6 +12,7 @@ import {
   isDeterministicIntent,
 } from "../src/lib/rag/cache";
 import { closePool, getPool } from "../src/lib/rag/db";
+import { normalizeQuery } from "../src/lib/rag/normalize";
 import { POST } from "../src/app/api/ask/route";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
@@ -114,40 +116,46 @@ describe.skipIf(!hasDb)("shared Neon cache (live DB)", () => {
     expect(s.hit_rate).toBe(0.5);
   });
 
+  // The next two simulate an ingest bump by pinning the version THIS process
+  // sees. The live corpus_version row is shared with production and is never
+  // written from a test: a live bump, even one restored a moment later, let
+  // concurrent instances stamp cache rows with a version the corpus was not at.
   it("retires deterministic entries when the corpus version moves", async () => {
     const k = scratchKey("corpus-bump");
-    const before = await corpusVersion();
+    const live = await corpusVersion();
     await cacheSet(k, { intent: "ANALYTICS", answer: "asked in 30 of 49 exams" });
     expect((await cacheGet(k))?.body.answer).toBe("asked in 30 of 49 exams");
 
     // What pipeline/bump_corpus_version.py does at the end of an ingest.
-    await getPool().query("UPDATE corpus_version SET version = version + 1 WHERE id = 1");
-    _resetCacheForTests(); // also forgets the memoized version
+    _pinCorpusVersionForTests(live + 1);
+    expect(await corpusVersion()).toBe(live + 1);
 
-    try {
-      expect(await corpusVersion()).toBe(before + 1);
-      // Stale count -> must NOT be served, from either layer.
-      expect(await cacheGet(k)).toBeNull();
-    } finally {
-      await getPool().query("UPDATE corpus_version SET version = $1 WHERE id = 1", [before]);
-    }
+    // Stale count -> must NOT be served: not the copy still in L1 ...
+    expect(await cacheGet(k)).toBeNull();
+    // ... nor the L2 row, as a cold instance sees it.
+    _resetCacheForTests();
+    _pinCorpusVersionForTests(live + 1);
+    expect(await cacheGet(k)).toBeNull();
+
+    // The row keeps the version it was written at — nothing here stamps a future one.
+    const row = await getPool().query(
+      "SELECT corpus_version FROM response_cache WHERE cache_key = $1",
+      [k.key],
+    );
+    expect(Number(row.rows[0].corpus_version)).toBe(live);
   });
 
   it("keeps semantic entries across a corpus bump (they ride their TTL)", async () => {
     const k = scratchKey("semantic-survives");
-    const before = await corpusVersion();
+    const live = await corpusVersion();
     await cacheSet(k, { intent: "SEMANTIC", answer: "**TCP is connection-oriented.**" });
 
-    await getPool().query("UPDATE corpus_version SET version = version + 1 WHERE id = 1");
     _resetCacheForTests();
+    _pinCorpusVersionForTests(live + 1);
 
-    try {
-      const hit = await cacheGet(k);
-      expect(hit?.layer).toBe("l2");
-      expect(hit?.body.answer).toBe("**TCP is connection-oriented.**");
-    } finally {
-      await getPool().query("UPDATE corpus_version SET version = $1 WHERE id = 1", [before]);
-    }
+    const hit = await cacheGet(k);
+    expect(hit?.layer).toBe("l2");
+    expect(hit?.body.answer).toBe("**TCP is connection-oriented.**");
   });
 
   it("an expired entry is a miss", async () => {
@@ -162,8 +170,10 @@ describe.skipIf(!hasDb)("shared Neon cache (live DB)", () => {
   });
 
   it("/api/ask serves the second identical question from cache", async () => {
-    const question = "What are the most repeated questions?";
-    const k = cacheKey(SUBJECT, question, { intent: "ANALYTICS" });
+    // A question only this test asks, keyed exactly as the route keys it, so
+    // the live "Most repeated questions" button entry is never deleted.
+    const question = "What are the most repeated questions? (cache round-trip test)";
+    const k = cacheKey(SUBJECT, normalizeQuery(question), { intent: "ANALYTICS" });
     keys.push(k.key);
     await getPool().query("DELETE FROM response_cache WHERE cache_key = $1", [k.key]);
     _resetCacheForTests();
