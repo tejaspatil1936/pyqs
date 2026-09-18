@@ -11,7 +11,13 @@
  * configured model rejects it (mirrors the pipeline's fallback ladder).
  */
 
-import { AllKeysBenched, acquireKey, benchKey, benchKeyForDay } from "./key-rotator";
+import {
+  AllKeysBenched,
+  acquireKey,
+  benchKey,
+  benchKeyForDay,
+  keyAvailability,
+} from "./key-rotator";
 import { recordCall } from "./providers/registry";
 import { ProviderModelDead, ProviderTransient, ProvidersUnavailable } from "./providers/types";
 
@@ -66,32 +72,60 @@ function logKey(index: number, outcome: string): void {
  * Model reachability check for the provider preflight: a metadata GET, so it
  * costs no generation quota. A 404 means the configured GEMINI_MODEL is
  * retired or misspelled — a deploy bug, surfaced as ProviderModelDead.
+ *
+ * A REJECTED KEY is a problem with that key, not with the provider: it is
+ * benched for the day exactly like generateText() benches it, and the check
+ * moves on to the next key. Only when every key in the pool has been refused
+ * is it a misconfigured GEMINI_API_KEYS — that aborts loudly as
+ * ProviderModelDead (so a single-key deployment with a bad key still does).
  */
 export async function geminiPreflight(): Promise<void> {
-  let key: string;
-  try {
-    ({ key } = acquireKey());
-  } catch (err) {
-    if (err instanceof AllKeysBenched) {
+  const rejected = new Map<number, number>(); // key index -> HTTP status
+  for (;;) {
+    let key: string;
+    let index: number;
+    try {
+      ({ key, index } = acquireKey());
+    } catch (err) {
+      if (!(err instanceof AllKeysBenched)) {
+        throw new ProviderModelDead("gemini", GEMINI_MODEL, "GEMINI_API_KEYS is not set");
+      }
+      const total = keyAvailability().total;
+      if (rejected.size > 0 && rejected.size === total) {
+        const statuses = [...new Set(rejected.values())].join("/");
+        throw new ProviderModelDead(
+          "gemini",
+          GEMINI_MODEL,
+          `every key in GEMINI_API_KEYS was rejected (${total} of ${total}, HTTP ${statuses}) — check the keys`,
+        );
+      }
       throw new ProvidersUnavailable("all Gemini keys are rate-limited or out of quota");
     }
-    throw new ProviderModelDead("gemini", GEMINI_MODEL, "GEMINI_API_KEYS is not set");
+
+    const resp = await fetch(`${API_BASE}/${GEMINI_MODEL}?key=${key}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (resp.status === 404) {
+      throw new ProviderModelDead("gemini", GEMINI_MODEL, "model not found (HTTP 404)");
+    }
+    if (resp.status === 400 || resp.status === 401 || resp.status === 403) {
+      // Loud, and by index only — a revoked or typo'd key needs replacing.
+      console.error(
+        JSON.stringify({
+          evt: "gemini_key_rejected",
+          phase: "preflight",
+          key_index: index,
+          status: resp.status,
+        }),
+      );
+      benchKeyForDay(index);
+      rejected.set(index, resp.status);
+      continue;
+    }
+    // Anything else (5xx, network) is transient; the caller retries the check.
+    if (!resp.ok) throw new Error(`Gemini preflight HTTP ${resp.status}`);
+    return;
   }
-  const resp = await fetch(`${API_BASE}/${GEMINI_MODEL}?key=${key}`, {
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (resp.status === 404) {
-    throw new ProviderModelDead("gemini", GEMINI_MODEL, "model not found (HTTP 404)");
-  }
-  if (resp.status === 400 || resp.status === 401 || resp.status === 403) {
-    throw new ProviderModelDead(
-      "gemini",
-      GEMINI_MODEL,
-      `key rejected (HTTP ${resp.status}) — check GEMINI_API_KEYS`,
-    );
-  }
-  // Anything else (5xx, network) is transient; the caller retries the check.
-  if (!resp.ok) throw new Error(`Gemini preflight HTTP ${resp.status}`);
 }
 
 export async function generateText(

@@ -1,10 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { generateText } from "../src/lib/rag/gemini";
-import { _resetKeyRotatorForTests } from "../src/lib/rag/key-rotator";
+import { generateText, geminiPreflight, GEMINI_MODEL } from "../src/lib/rag/gemini";
+import {
+  _resetKeyRotatorForTests,
+  acquireKey,
+  benchKey,
+  keyAvailability,
+} from "../src/lib/rag/key-rotator";
 import { generateForLane } from "../src/lib/rag/providers";
-import { _resetProviderRegistryForTests, snapshot } from "../src/lib/rag/providers/registry";
-import { ProviderTransient, ProvidersUnavailable } from "../src/lib/rag/providers/types";
+import {
+  _resetProviderRegistryForTests,
+  preflightStatus,
+  snapshot,
+} from "../src/lib/rag/providers/registry";
+import {
+  ProviderModelDead,
+  ProviderTransient,
+  ProvidersUnavailable,
+} from "../src/lib/rag/providers/types";
 
 /**
  * Deterministic coverage of the Gemini client's failure handling, with fetch
@@ -43,17 +56,27 @@ function abortedBody(status = 200): Response {
   return new Response(stream, { status });
 }
 
-function stubFetch(generate: (() => Response)[]) {
+/** Which key each Gemini request used, in order. */
+let geminiRequests: { kind: "preflight" | "generate"; key: string }[] = [];
+
+function stubFetch(
+  generate: (() => Response)[],
+  preflight: (key: string) => Response = () => jsonResponse({ name: "models/test" }),
+) {
   generateQueue = [...generate];
+  geminiRequests = [];
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.includes("generativelanguage.googleapis.com")) {
+      const key = new URL(url).searchParams.get("key") ?? "";
       if (url.includes(":generateContent")) {
+        geminiRequests.push({ kind: "generate", key });
         const next = generateQueue.shift();
         if (!next) throw new Error("stub exhausted");
         return next();
       }
-      return jsonResponse({ name: "models/test" }); // preflight metadata GET
+      geminiRequests.push({ kind: "preflight", key });
+      return preflight(key); // model metadata GET
     }
     if (url.endsWith("/models")) return jsonResponse({ data: [{ id: GROQ_MODEL }] });
     if (url.endsWith("/chat/completions")) {
@@ -151,5 +174,67 @@ describe("the lane degrades instead of 500ing", () => {
     stubFetch([() => abortedBody()]);
 
     await expect(generateForLane("synthesis", "p")).rejects.toBeInstanceOf(ProvidersUnavailable);
+  });
+});
+
+describe("preflight: a rejected key is benched, not a dead provider", () => {
+  const rejectKeyA = (key: string) =>
+    key === "key-a"
+      ? jsonResponse({ error: { code: 400, message: "API key not valid." } }, 400)
+      : jsonResponse({ name: "models/test" });
+
+  /** The rotator starts at a random key; advance it so key-a is served next. */
+  function sampleKeyANext() {
+    while (acquireKey().index !== 1);
+  }
+
+  it("benches the rejected key and passes the check with the next one", async () => {
+    stubFetch([], rejectKeyA);
+    sampleKeyANext();
+
+    await expect(geminiPreflight()).resolves.toBeUndefined();
+    expect(geminiRequests.map((r) => r.key)).toEqual(["key-a", "key-b"]);
+    expect(keyAvailability()).toEqual({ total: 2, available: 1, benched: 1 });
+  });
+
+  it("through the router, the lane stays alive and answers with the good key", async () => {
+    process.env.SYNTHESIS_PROVIDERS = "gemini";
+    stubFetch([() => candidate("**Paging** splits memory into frames.")], rejectKeyA);
+    sampleKeyANext();
+
+    const res = await generateForLane("synthesis", "p");
+    expect(res.provider).toBe("gemini");
+    expect(preflightStatus("gemini", "synthesis", GEMINI_MODEL).status).toBe("ok");
+    expect(geminiRequests.find((r) => r.kind === "generate")?.key).toBe("key-b");
+  });
+
+  it("a single-key deployment whose key is rejected still aborts loudly", async () => {
+    process.env.GEMINI_API_KEYS = "key-a";
+    _resetKeyRotatorForTests();
+    stubFetch([], rejectKeyA);
+
+    await expect(geminiPreflight()).rejects.toBeInstanceOf(ProviderModelDead);
+  });
+
+  it("every key rejected is a misconfiguration and aborts loudly", async () => {
+    stubFetch([], () => jsonResponse({ error: { message: "PERMISSION_DENIED" } }, 403));
+
+    const err = await geminiPreflight().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderModelDead);
+    expect((err as Error).message).toMatch(/every key in GEMINI_API_KEYS was rejected \(2 of 2/);
+  });
+
+  it("one key out of quota and the other rejected is a quota event, not a dead provider", async () => {
+    stubFetch([], rejectKeyA);
+    benchKey(1, 60_000); // key-b cooling down on a per-minute 429
+
+    await expect(geminiPreflight()).rejects.toBeInstanceOf(ProvidersUnavailable);
+  });
+
+  it("a 404 still means the model is dead, whichever key asked", async () => {
+    stubFetch([], () => jsonResponse({ error: { message: "not found" } }, 404));
+
+    await expect(geminiPreflight()).rejects.toBeInstanceOf(ProviderModelDead);
+    expect(geminiRequests).toHaveLength(1);
   });
 });
