@@ -3,6 +3,14 @@
 # after backend changes. Analytics/DB tests always run; the semantic
 # synthesis tests additionally use the shared Gemini keys (GEMINI_API_KEYS),
 # degrading honestly when every key is quota-benched.
+#
+# Because that database is production, the tests must never write
+# corpus_version, the freshness signal behind the shared response cache.
+# Moving it, even briefly, lets live instances stamp cache rows with a version
+# the corpus is not at. tests/live-db-guard.ts refuses such writes inside the
+# test process (corpus bumps are simulated in-process with
+# _pinCorpusVersionForTests), and the first test step below proves that guard
+# is active before anything else runs against the live database.
 name: API integration tests
 
 on:
@@ -48,6 +56,13 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Gate: if the guard is broken or not installed, stop here, before any
+      # other test touches the production database.
+      - name: Verify the live-DB guard refuses corpus_version writes
+        run: pnpm exec vitest run tests/live-db-guard.test.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Run integration tests (unit + live DB)
         run: pnpm test
