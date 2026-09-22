@@ -10,6 +10,7 @@ import {
 import { generateForLane } from "../src/lib/rag/providers";
 import {
   _resetProviderRegistryForTests,
+  isBenched,
   preflightStatus,
   snapshot,
 } from "../src/lib/rag/providers/registry";
@@ -236,5 +237,63 @@ describe("preflight: a rejected key is benched, not a dead provider", () => {
 
     await expect(geminiPreflight()).rejects.toBeInstanceOf(ProviderModelDead);
     expect(geminiRequests).toHaveLength(1);
+  });
+});
+
+describe("upstream 5xx: Gemini overloaded", () => {
+  // The real body, seen live on 2026-09-22 when the model was saturated.
+  const unavailable = () =>
+    jsonResponse(
+      {
+        error: {
+          code: 503,
+          status: "UNAVAILABLE",
+          message: "This model is currently experiencing high demand.",
+        },
+      },
+      503,
+    );
+
+  it("retries the first 5xx on the next key — a spike can be local to one backend", async () => {
+    stubFetch([unavailable, () => candidate("recovered")]);
+
+    await expect(generateText("p")).resolves.toBe("recovered");
+    const used = geminiRequests.filter((r) => r.kind === "generate").map((r) => r.key);
+    expect(used).toHaveLength(2);
+    expect(used[0]).not.toBe(used[1]);
+  });
+
+  it("a REPEATED 5xx is transient, not a raw error", async () => {
+    stubFetch([unavailable, unavailable]);
+
+    await expect(generateText("p")).rejects.toBeInstanceOf(ProviderTransient);
+    expect(snapshot("gemini").last_outcome).toBe("error_503");
+  });
+
+  it("benches no key — an overloaded model is not a bad key", async () => {
+    stubFetch([unavailable, unavailable]);
+
+    await expect(generateText("p")).rejects.toBeInstanceOf(ProviderTransient);
+    expect(keyAvailability()).toEqual({ total: 2, available: 2, benched: 0 });
+  });
+
+  it("the router falls through to the next provider instead of aborting the lane", async () => {
+    process.env.SYNTHESIS_PROVIDERS = "gemini,groq";
+    process.env.GROQ_API_KEY = "k";
+    process.env.GROQ_SYNTHESIS_MODEL = GROQ_MODEL;
+    stubFetch([unavailable, unavailable]);
+
+    const res = await generateForLane("synthesis", "p");
+    expect(res.provider).toBe("groq");
+    expect(res.text).toBe("written by groq");
+    expect(isBenched("gemini")).toBe(true); // benched briefly, not marked dead
+    expect(preflightStatus("gemini", "synthesis", GEMINI_MODEL).status).not.toBe("dead");
+  });
+
+  it("with Gemini alone it exhausts the lane — the route's degrade signal, never a 500", async () => {
+    process.env.SYNTHESIS_PROVIDERS = "gemini";
+    stubFetch([unavailable, unavailable]);
+
+    await expect(generateForLane("synthesis", "p")).rejects.toBeInstanceOf(ProvidersUnavailable);
   });
 });

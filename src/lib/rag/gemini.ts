@@ -242,10 +242,24 @@ export async function generateText(
       benchKeyForDay(index); // bad key — out for the day
       continue;
     }
-    if (resp.status >= 500 && !retriedServerError) {
-      retriedServerError = true;
-      logKey(index, `server_${resp.status}`);
-      continue;
+    if (resp.status >= 500) {
+      // Google-side overload or outage ("This model is currently experiencing
+      // high demand"), not a key problem — so no key is benched. The first one
+      // is worth another key, since a spike can be local to one backend. A
+      // second means Gemini itself is struggling: hand the request down the
+      // ladder like any other transient provider failure, instead of throwing
+      // a raw Error that the router can only rethrow and /api/ask can only
+      // turn into a 500.
+      if (!retriedServerError) {
+        retriedServerError = true;
+        logKey(index, `server_${resp.status}`);
+        continue;
+      }
+      logKey(index, `error_${resp.status}`);
+      throw new ProviderTransient(
+        `Gemini HTTP ${resp.status}: ${errText.slice(0, 200)}`,
+        "gemini",
+      );
     }
     logKey(index, `error_${resp.status}`);
     throw new Error(`Gemini HTTP ${resp.status}: ${errText.slice(0, 300)}`);
