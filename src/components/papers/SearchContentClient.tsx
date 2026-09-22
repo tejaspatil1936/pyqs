@@ -15,7 +15,7 @@ export default function SearchContentClient() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { setBrowsedSubject } = useAskAi()
-    const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
+    const selectedSubject = searchParams.get("subject")
     const [showGoUp, setShowGoUp] = useState(false)
     const scrollToTopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -29,27 +29,22 @@ export default function SearchContentClient() {
     }, [])
 
     useEffect(() => {
-        const subjectParam = searchParams.get("subject")
-        if (subjectParam) {
-            setSelectedSubject(subjectParam)
+        if (!selectedSubject) return
 
-            if (scrollToTopTimeoutRef.current) {
-                clearTimeout(scrollToTopTimeoutRef.current)
-            }
-
-            scrollToTopTimeoutRef.current = setTimeout(() => {
-                scrollToTop()
-            }, 50)
-        } else {
-            setSelectedSubject(null)
+        if (scrollToTopTimeoutRef.current) {
+            clearTimeout(scrollToTopTimeoutRef.current)
         }
+
+        scrollToTopTimeoutRef.current = setTimeout(() => {
+            scrollToTop()
+        }, 50)
 
         return () => {
             if (scrollToTopTimeoutRef.current) {
                 clearTimeout(scrollToTopTimeoutRef.current)
             }
         }
-    }, [searchParams, scrollToTop])
+    }, [selectedSubject, scrollToTop])
 
     // Feed the browsed subject to the AskAI panel so, on this page, the panel
     // binds to what's being browsed (the route) rather than any stored subject.

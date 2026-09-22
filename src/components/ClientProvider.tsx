@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState, ReactNode } from "react"
+import { ReactNode } from "react"
 import { usePathname } from "next/navigation"
 import { MotionConfig } from "framer-motion"
 import { ThemeProvider } from "next-themes"
 import { SettingsProvider, useSettings } from "@/contexts/SettingsContext"
 import { AskAiProvider, useAskAi } from "@/contexts/AskAiContext"
+import { useIsHydrated } from "@/hooks/useIsHydrated"
 import GhostCursor from "./animations/GhostCursor"
 import AskAiPanel from "./assistant/AskAiPanel"
 import AskAiFab from "./assistant/AskAiFab"
@@ -50,13 +51,9 @@ export default function ClientProvider({
     children,
     fallback = null,
 }: ClientProviderProps) {
-    const [isClient, setIsClient] = useState(false)
+    const isHydrated = useIsHydrated()
 
-    useEffect(() => {
-        setIsClient(true)
-    }, [])
-
-    if (!isClient) {
+    if (!isHydrated) {
         return <>{fallback}</>
     }
 
