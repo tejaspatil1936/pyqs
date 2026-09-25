@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { EMBED_DIM, embedQuery, toVectorLiteral } from "../src/lib/rag/embed";
+import { embedQuery } from "../src/lib/rag/embed";
+import { EMBED_DIM, toVectorLiteral } from "../src/lib/rag/vector";
 
 // No DB needed: verifies the transformers.js path produces vectors shaped
 // exactly like the pipeline's (384-dim, L2-normalized).

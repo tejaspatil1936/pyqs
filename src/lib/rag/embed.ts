@@ -19,6 +19,8 @@ import {
   type FeatureExtractionPipeline,
 } from "@huggingface/transformers";
 
+import { EMBED_DIM } from "./vector";
+
 // transformers.js' overloaded pipeline() signature explodes into a union too
 // complex for tsc (TS2590); collapse it to the one call shape we use.
 const pipeline = hfPipeline as (
@@ -28,8 +30,6 @@ const pipeline = hfPipeline as (
 ) => Promise<FeatureExtractionPipeline>;
 
 env.cacheDir = process.env.TRANSFORMERS_CACHE_DIR ?? "/tmp/transformers-cache";
-
-export const EMBED_DIM = 384;
 
 // Same weights as sentence-transformers/all-MiniLM-L6-v2, converted to ONNX.
 const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
@@ -65,9 +65,4 @@ export async function embedQuery(text: string): Promise<number[]> {
     throw new Error(`expected ${EMBED_DIM}-dim embedding, got ${vec.length}`);
   }
   return vec;
-}
-
-/** pgvector text literal, e.g. "[0.1,-0.2,...]" — pass as $n::vector. */
-export function toVectorLiteral(vec: number[]): string {
-  return `[${vec.map((x) => x.toFixed(6)).join(",")}]`;
 }

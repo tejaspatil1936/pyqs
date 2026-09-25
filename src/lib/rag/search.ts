@@ -1,5 +1,5 @@
 import { getPool } from "./db";
-import { toVectorLiteral } from "./embed";
+import { toVectorLiteral } from "./vector";
 
 export interface SearchHit {
   question_id: number;

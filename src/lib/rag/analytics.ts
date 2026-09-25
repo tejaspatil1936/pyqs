@@ -1,6 +1,6 @@
 import { TOPIC_MATCH_THRESHOLD } from "./config";
 import { getPool } from "./db";
-import { toVectorLiteral } from "./embed";
+import { toVectorLiteral } from "./vector";
 
 export interface ClusterRow {
   cluster_id: number;
