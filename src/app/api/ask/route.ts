@@ -38,6 +38,7 @@ import {
   SEMANTIC_MIN_SIMILARITY,
 } from "@/lib/rag/config";
 import { embedQuery } from "@/lib/rag/embed";
+import { EmbeddingsUnavailable } from "@/lib/rag/vector";
 import { GeminiUnavailable } from "@/lib/rag/gemini";
 import {
   NUMBERED_REF,
@@ -277,6 +278,64 @@ export async function POST(req: Request) {
     const filters = { year, examType };
     const note = filterLabel(filters);
     filtersActiveForInvariants = note != null;
+
+    /**
+     * Concept search needs a query vector in the corpus's own embedding space,
+     * and there is no honest substitute — a different model would be scoring
+     * against vectors it never produced. So when the embedder is unavailable,
+     * serve the frequency data instead (pure SQL, unaffected), say plainly
+     * what is missing, and never cache the outage shape.
+     */
+    const embeddingsDownResponse = async (): Promise<Record<string, unknown>> => {
+      logEvent({ evt: "embeddings_unavailable", subject, intent });
+      const lead =
+        "**Open-ended search is temporarily unavailable.** I can't match your wording against the papers right now — here's what they ask most often instead. The frequency data below is unaffected.\n\n";
+      const [topics, total, tStats] = await Promise.all([
+        topicWeightage(subject, 10, filters),
+        totalExams(subject, filters),
+        topicStats(subject, filters),
+      ]);
+      const small = isSmallCorpus(subjectStats, total);
+      const smallNote = small
+        ? `\n\n*Small archive: only ${total} exam${total === 1 ? "" : "s"} on file — treat these counts as indicative.*`
+        : "";
+      if (topics.length > 0) {
+        const questions = await topicQuestions(subject, topics.map((t) => t.topic), 4, filters);
+        return {
+          intent: "TOPIC_WEIGHTAGE",
+          subject,
+          answer:
+            lead +
+            formatTopicWeightageAnswer(subject, topics, total, tStats.topic_count, note) +
+            smallNote,
+          topics: topics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
+          total_exams: total,
+          topic_count: tStats.topic_count,
+          total_appearances: tStats.total_appearances,
+          degraded: true,
+          ...(small ? { small_corpus: true } : {}),
+          ...(note ? { filters: { year, exam_type: examType } } : {}),
+        };
+      }
+      const clusters = await topClusters(subject, TOP_K, filters);
+      const sources = await clusterSources(clusters.map((c) => c.cluster_id), 3, filters);
+      const annotated = clusters.map(annotateCluster);
+      return {
+        intent: "ANALYTICS",
+        answer:
+          lead +
+          (annotated.length > 0 ? formatAnalyticsAnswer(subject, annotated, sources, note) : "") +
+          smallNote,
+        clusters: annotated.map((c) => {
+          const src = sources.get(c.cluster_id);
+          return { ...c, sources: src?.list ?? [], source_total: src?.total ?? 0 };
+        }),
+        total_exams: total,
+        degraded: true,
+        ...(small ? { small_corpus: true } : {}),
+        ...(note ? { filters: { year, exam_type: examType } } : {}),
+      };
+    };
 
     // "Predict the paper" phrasings: lead with the disclaimer, then honest
     // frequency data — never Gemini-written fortune telling.
@@ -567,9 +626,17 @@ export async function POST(req: Request) {
       const exhaustive = isExhaustiveQuery(question);
       // Always fetch the full set (bounded): the total is needed for the
       // "top 10 of N" statement and the exam count either way.
-      const allClusters = label
-        ? await labelClusters(subject, label, MAX_TOPIC_CLUSTERS, filters)
-        : await topicClusters(subject, await embedQuery(rawPhrase), MAX_TOPIC_CLUSTERS, filters);
+      let allClusters:
+        | Awaited<ReturnType<typeof labelClusters>>
+        | Awaited<ReturnType<typeof topicClusters>>;
+      try {
+        allClusters = label
+          ? await labelClusters(subject, label, MAX_TOPIC_CLUSTERS, filters)
+          : await topicClusters(subject, await embedQuery(rawPhrase), MAX_TOPIC_CLUSTERS, filters);
+      } catch (err) {
+        if (!(err instanceof EmbeddingsUnavailable)) throw err;
+        return respond(await embeddingsDownResponse(), false);
+      }
       const clusters = exhaustive ? allClusters : allClusters.slice(0, TOP_K);
       if (clusters.length === 0) {
         // The total leads UNCONDITIONALLY — a zero-match topic query still
@@ -665,7 +732,13 @@ export async function POST(req: Request) {
       // else: history exists and the classifier's rewrite already resolved
       // the reference into real content — proceed with it.
     }
-    const queryVec = await embedQuery(searchQuery);
+    let queryVec: number[];
+    try {
+      queryVec = await embedQuery(searchQuery);
+    } catch (err) {
+      if (!(err instanceof EmbeddingsUnavailable)) throw err;
+      return respond(await embeddingsDownResponse(), false);
+    }
     const hits = await semanticSearch(subject, queryVec, TOP_K);
 
     // Grounding floor: without enough genuinely similar questions, honesty

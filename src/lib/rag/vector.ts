@@ -13,6 +13,15 @@
 /** all-MiniLM-L6-v2 output width; the `vector(384)` column matches it. */
 export const EMBED_DIM = 384;
 
+/**
+ * The query embedder could not run: the model would not load, the ONNX runtime
+ * is missing its native library on this platform, or inference failed. Callers
+ * degrade honestly — concept search needs a query vector, and there is no
+ * substitute that keeps the same vector space as the stored embeddings. Lives
+ * here, not in ./embed, so a caller can catch it without importing the stack.
+ */
+export class EmbeddingsUnavailable extends Error {}
+
 /** pgvector text literal, e.g. "[0.1,-0.2,...]" — pass as $n::vector. */
 export function toVectorLiteral(vec: number[]): string {
   return `[${vec.map((x) => x.toFixed(6)).join(",")}]`;

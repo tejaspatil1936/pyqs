@@ -92,13 +92,27 @@ function reachEmbeddingStack(entry: string): Set<Edge> {
   return found;
 }
 
-describe("SQL-only routes never import the embedding stack", () => {
+describe("nothing imports the embedding stack eagerly", () => {
   it.each(SQL_ONLY_ROUTES)("%s never reaches it, eagerly or lazily", (route) => {
     expect(existsSync(route)).toBe(true);
     expect([...reachEmbeddingStack(route)]).toEqual([]);
   });
 
+  it("/api/ask reaches it — but only through a deferred import", () => {
+    const reached = reachEmbeddingStack(ASK_ROUTE);
+    // Present, so we know the walker really finds the stack (not a vacuous pass).
+    expect([...reached]).toContain("deferred");
+    // Absent, which is the actual fix: an eager edge here would 500 the whole
+    // route on a runtime without the native library, analytics included.
+    expect([...reached]).not.toContain("eager");
+  });
 
+  it("embed.ts loads transformers lazily and holds only a type import of it", () => {
+    const edges = edgesOf("src/lib/rag/embed.ts").filter((e) =>
+      EMBEDDING_MODULES.includes(e.spec),
+    );
+    expect(edges.map((e) => e.kind)).toEqual(["deferred"]);
+  });
 });
 
 describe("the vector helpers stay dependency-free", () => {
